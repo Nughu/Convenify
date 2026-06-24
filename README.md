@@ -2,7 +2,7 @@
 
   <h1>Convenify</h1>
 
-  <h3 style="color:#f0f6fc;">A python-based music downloader designed for conveniently syncing your local library with your Spotify playlists</h3>
+  <h4 style="color:#f0f6fc;">A python-based music downloader designed for conveniently syncing your local library with your Spotify playlists</h4>
 </div>
 
 <p>
