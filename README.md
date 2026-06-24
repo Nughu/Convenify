@@ -1,6 +1,3 @@
-# Convenify
-.
-
 <div align="center" style="background-color:#0d1117; padding:32px; border-radius:12px;">
 
   <h1>Convenify</h1>
