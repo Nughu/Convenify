@@ -1,0 +1,17 @@
+language: python
+python:
+- 3.8
+- 3.7
+- 3.6
+install: pip install -U tox-travis
+script: tox
+deploy:
+  provider: pypi
+  distributions: sdist bdist_wheel
+  user: LaurenceRawlings
+  password:
+    secure: UVkyww8GgoLSY4Mw32PD917VyDefuwZDytzm9pdmrYiu22a4i4xmKPRk9kbWhB5xnKnV8hJniaMEnVhs29V2UEVNqmAwQe4bTCALEKj7mB3aQQFNnJoNT2wg6ru6Znlgs7WUQweKoH43x6XpSI6BDw7NSFv9oyBiV1Uzod7nxGM6DLFbVsQMZxICB0PswwcJqT0g7aV6/waJqqmhahPyxrGhF7YGJERyDV3vTcVuZDjMPJcfzNeZ/izVqleD/6eYB9gr7xdnPq9i+2W2f0oZYyCypHOzsr2cqsLt3e86OEC+dxQLQXcht6SXTZxr4808lUA1rt064DDxGQLKnadAbDTnKkTFfQPtE0AmiPY6PsnUVsNP67HZJIOwOdjsIRX1iG+n+okdFDDdXqB75r0bkxbdoBfEBn4abGgoEFw0f2ooewEa9T88/jsLHeDORV7n1K7SiSFrXQA9zQPbdZSdbCXpKwjQvOZOco1mcA0OgK0g1NXsBiWGOiHwy6NdlPI2e4lGbwaLy2Iww7vv3NwMKJxxtXwPOEnfxoGASzp6ivF1iI7XT1r5vaPCJYHCQOJ0sdhUeFExkOfsUL0ZlA3TswTTWVDbvyxXXZI1A6l2W2aoJY+YXVq80d2yS8EcpnzmGrFcVR8WMYsFvA2ZbZ4/1pmLCV8IRE8Wyb0UTnPSxAA=
+  on:
+    tags: true
+    repo: LaurenceRawlings/savify
+    python: 3.8
