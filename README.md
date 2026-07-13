@@ -9,7 +9,7 @@
   There are 2 scripts included, a manual downloader (download.py) and an automated library updater (update_library.py). The manual downloader takes a link (or a file containing multiple links) and sorts the downloaded tracks into a specific folder structure depending on whether it's a track, playlist or album. The updater takes an internal list of playlists, each entry consisting of name, path, link and genre of the playlist. When run, it iterates through these playlists, downloads any newly added tracks, puts them into the specified directory and then adds a genre tag to each downloaded file, making it especially convenient for DJs who like to have all music of a genre easily accessible in one place. </br> 
   The first version of this used the .exe release of Savify, and the basic mechanism is still based on that principle: </br>
   Convenify takes a Spotify link, looks into the URL, and then builds a custom command to launch Savify with certain parameters. Savify takes the metadata from Spotify, searches for the track on youtube, and then downloads it in the highest quality available using yt-dlp. </br>
-  You can edit download.py and update_library.py to fit your local archive, specifying locations, Savify parameters and your own playlists to be synced by update_library.py. </br>
+  You can edit download.py and update_library.py to fit your local archive, specifying locations, Savify parameters and your own playlists to be synced by update_library.py. </br> </br>
 </p>
 
 <h3>Known Issues</h3>
