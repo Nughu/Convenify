@@ -12,6 +12,7 @@ track_args = "-g \"%artist%\""
 album_args = "-g \"%artist%/%album%\""
 playlist_args = "-g \"%playlist%\""
 
+# yt-dlp args, probably don't work in savify directly
 additional_args = " --cookies-from-browser chrome --sleep-requests 1.25 --min-sleep-interval 60 --max-sleep-interval 90"
 
 #extractor_args = "--extractor-args \"youtube:player-client=default,-tv_simply\""
