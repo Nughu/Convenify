@@ -5,7 +5,7 @@ from colorama import Fore, Style, init
 init(autoreset=True)
 
 # Variables
-musicpath = "root-path"
+musicpath = "J:\\DJing\\Musiq"
 savify_path = ".\\savify-new"
 
 track_args = "-g \"%artist%\""
