@@ -5,8 +5,8 @@ from colorama import Fore, Style, init
 init(autoreset=True)
 
 # Variables
-musicpath = "J:\\DJing\\Musiq"
-savify_path = ".\\savify-new"
+LIBRARY_PATH = "J:\\DJing\\Musiq"
+SAVIFY_PATH = ".\\savify-new"
 
 track_args = "-g \"%artist%\""
 album_args = "-g \"%artist%/%album%\""
@@ -21,19 +21,19 @@ additional_args = " --cookies-from-browser chrome --sleep-requests 1.25 --min-sl
 def download(url):
 	if (url[25:33]) == "playlist":
 		Type = "Playlist"
-		subcmd = str("python \"" + savify_path + "\\savify\\__main__.py\" -o \"" + musicpath + "\\Playlist\" " + playlist_args + " " + url)
+		subcmd = str("python \"" + SAVIFY_PATH + "\\savify\\__main__.py\" -o \"" + LIBRARY_PATH + "\\Playlist\" " + playlist_args + " " + url)
 		sub = subprocess.Popen(subcmd, shell=True)
 		sub.wait()
 		print(Fore.GREEN + "Download completed.")
 	if (url[25:30]) == "track":
 		Type = "Track"
-		subcmd = str("python \"" + savify_path + "\\savify\\__main__.py\" -o \"" + musicpath + "\" " + track_args + " " + url)
+		subcmd = str("python \"" + SAVIFY_PATH + "\\savify\\__main__.py\" -o \"" + LIBRARY_PATH + "\" " + track_args + " " + url)
 		sub = subprocess.Popen(subcmd, shell=True)
 		sub.wait()
 		print(Fore.GREEN + "Download completed.")
 	if (url[25:30]) == "album":
 		Type = "Album"
-		subcmd = str("python \"" + savify_path + "\\savify\\__main__.py\" -o \"" + musicpath + "\\Album\" " + album_args + " " + url)
+		subcmd = str("python \"" + SAVIFY_PATH + "\\savify\\__main__.py\" -o \"" + LIBRARY_PATH + "\\Album\" " + album_args + " " + url)
 		sub = subprocess.Popen(subcmd, shell=True)
 		sub.wait()
 		print(Fore.GREEN + "Download completed.")
