@@ -219,6 +219,13 @@ class Savify:
             'logger': self.logger,
             'progress_hooks': [_progress],
 
+            # ARGS ADDED BY NUGHU
+            "sleep_interval": 15,
+            "max_sleep_interval": 35,
+            "sleep-requests": 3,
+            "retries": 2,
+            "retry-sleep": 5, 
+
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': self.download_format,
