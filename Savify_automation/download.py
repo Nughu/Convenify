@@ -71,7 +71,6 @@ while True:
 					download(y)	
 		elif userinput[13:20] == "spotify":
 			download(userinput)
-			print(Fore.RED + f"\n\n############################\n\n{e}\n\n############################\n\n\n")
 		
 		else:
 			print(Fore.RED + "\n############################\nNOT UNDERSTOOD!\n############################\n")
