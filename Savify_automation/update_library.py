@@ -8,7 +8,7 @@ import sys
 init(autoreset=True)
 
 # Variables
-LIBRARY_PATH = "root-path"
+LIBRARY_PATH = "J:\\DJing\\Musiq"
 
 # Playlists
 spotify_playlists = [
