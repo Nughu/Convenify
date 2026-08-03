@@ -80,7 +80,7 @@ class Savify:
         self.check_for_updates()
 
     def check_for_updates(self) -> None:
-        self.logger.info('Checking for updates...')
+        '''self.logger.info('Checking for updates...')
         latest_ver = requests.get('https://api.github.com/repos/LaurenceRawlings/savify/releases/latest').json()[
             'tag_name']
 
@@ -91,7 +91,8 @@ class Savify:
             self.logger.info('Savify is up to date!')
         else:
             self.logger.info('A new version of Savify is available, '
-                             'get the latest release here: https://github.com/LaurenceRawlings/savify/releases')
+                             'get the latest release here: https://github.com/LaurenceRawlings/savify/releases')'''
+        self.logger.info('Using custom Savify fork modified for Convenify')
 
     def _parse_query(self, query, query_type=Type.TRACK, artist_albums: bool = False) -> list:
         result = list()
@@ -218,13 +219,17 @@ class Savify:
             'prefer_ffmpeg': True,
             'logger': self.logger,
             'progress_hooks': [_progress],
+			
+			# --------------------------------------------------------------------------------------------------------------------------------------
 
             # ARGS ADDED BY NUGHU
-            "sleep_interval": 15,
-            "max_sleep_interval": 35,
-            "sleep-requests": 3,
-            "retries": 2,
-            "retry-sleep": 5, 
+            "sleep_interval": 45,
+            "max_sleep_interval": 60,
+            "sleep-requests": 20,
+            "retries": 1,
+            "retry-sleep": 30, 
+
+			# --------------------------------------------------------------------------------------------------------------------------------------
 
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
