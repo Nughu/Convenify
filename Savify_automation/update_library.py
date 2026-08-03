@@ -1,19 +1,16 @@
+import json
 import subprocess
 import time
 from colorama import init, Fore
 import music_tag
 import os
-import sys
 
 init(autoreset=True)
 
 # Variables
-LIBRARY_PATH = "J:\\DJing"
+spotify_playlists = json.loads(open("playlists.json").read())
+LIBRARY_PATH = spotify_playlists["library-path"]
 
-# Playlists
-spotify_playlists = [
-	["playlist-name", LIBRARY_PATH + "\\sub-path", "link", "genre"]
-]
 
 def download(naem, dest, url):
 	print(Fore.LIGHTBLUE_EX + "Downloading " + Fore.YELLOW + naem + Fore.LIGHTBLUE_EX + "...")
@@ -35,14 +32,15 @@ def tag_genre(dest, genre):
 
 # Main Process
 for x in spotify_playlists:
-	try:
-		download(naem=str(x[0]), dest=str(x[1]), url=str(x[2]))
-		if str(x[3]) != "":
-			tag_genre(dest=str(x[1]), genre=str(x[3]))
-		print(Fore.GREEN + "\nDownload of " + Fore.YELLOW + str(x[0]) + Fore.LIGHTBLUE_EX + " completed.\n\n")
-		time.sleep(3)
-	except Exception as e:
-		print(Fore.RED + f"\n\n############################\n\n{e}\n\n############################\n\n\n")
+	if x != "library-path" and x != "playlist-name":
+		try:
+			download(naem=str(x), dest= LIBRARY_PATH + str(x["path"]), url=str(x["url"]))
+			if str(x["genre"]) != "":
+				tag_genre(dest= LIBRARY_PATH + str(x["path"]), genre=str(x["genre"]))
+			print(Fore.GREEN + "\nDownload of " + Fore.YELLOW + str(x) + Fore.LIGHTBLUE_EX + " completed.\n\n")
+			time.sleep(3)
+		except Exception as e:
+			print(Fore.RED + f"\n\n############################\n\n{e}\n\n############################\n\n\n")
 
 print(Fore.GREEN + "\n\nLibrary update completed.\n\n")
 input(Fore.LIGHTBLUE_EX + "Press ENTER to quit.")
