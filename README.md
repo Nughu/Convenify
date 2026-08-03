@@ -15,12 +15,10 @@
 <h3>Installation</h3>
 <p>
 To use the Savify Python module you will need your own Spotify developer application to access their API. To do this sign up here: </br>
-</a href="https://developer.spotify.com"> </br>
+[Spotify for developers](https://developer.spotify.com) </br>
 When you have made a new application take note of your client id and secret. Now you need to add 2 environment variables to your system:</br>
-</br>
 SPOTIPY_CLIENT_ID</br>
 SPOTIPY_CLIENT_SECRET</br>
-</br>
 To find out how to do this find a tutorial online for your specific operating system. Once you have done this make sure to restart your shell.
 </p>
 
