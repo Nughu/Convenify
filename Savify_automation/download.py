@@ -65,10 +65,11 @@ while True:
 			with open(userinput) as file:
 				read = file.readlines()
 				for x in read:
-					y = x.replace("\n", "")
-					print(Fore.LIGHTBLUE_EX + "\nDownloading from " + userinput + "...\n" + Fore.YELLOW + (str((read.index(x)) + 1) + " / " + str(len(read))))
-					sleep(1)
-					download(y)	
+					y = x.replace("\n", "").replace(" ", "")
+					if y != "" and not y.startswith("#"):
+						print(Fore.LIGHTBLUE_EX + "\nDownloading from " + userinput + "...\n" + Fore.YELLOW + (str((read.index(x)) + 1) + " / " + str(len(read))))
+						sleep(1)
+						download(y)
 		elif userinput[13:20] == "spotify":
 			download(userinput)
 		
