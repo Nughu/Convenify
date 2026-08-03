@@ -213,7 +213,7 @@ class Savify:
             'format': 'bestaudio/best',
             'outtmpl': output_temp,
             'restrictfilenames': True,
-            'ignoreerrors': True,
+            'ignoreerrors': F,
             'nooverwrites': True,
             'noplaylist': True,
             'prefer_ffmpeg': True,
