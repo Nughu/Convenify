@@ -230,6 +230,12 @@ class Savify:
             'retry-sleep': 30,
             'force_ipv4': True,
 
+            'extractor_args': {
+                'youtube': {
+                    'player_client': 'ios',
+                }
+            },
+            
 			# --------------------------------------------------------------------------------------------------------------------------------------
 
             'postprocessors': [{
@@ -248,6 +254,7 @@ class Savify:
                 '-metadata', f'disc={track.disc_number}',
                 '-metadata', f'track={track.track_number}/{track.album_track_count}',
             ],
+
 
             **self.ydl_options,
         }
