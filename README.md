@@ -1,5 +1,5 @@
 <div align="center" style="background-color:#0d1117; padding:32px; border-radius:12px;">
-<p> <b>
+<pre style="margin:0; color:#f0f6fc; white-space:pre; font-family:monospace;">
       ___           ___           ___                        ___           ___                       ___                
      /  /\         /  /\         /__/\          ___         /  /\         /__/\        ___          /  /\        ___    
     /  /:/        /  /::\        \  \:\        /__/\       /  /:/_        \  \:\      /  /\        /  /:/_      /__/|   
@@ -11,7 +11,7 @@
    \  \:\/:/     \  \:\/:/     \  \:\       \  \:\__|:|   \  \:\/:/     \  \:\          /__/:/    \  \:\         \  \:\ 
     \  \::/       \  \::/       \  \:\       \__\::::/     \  \::/       \  \:\         \__\/      \  \:\         \__\/ 
      \__\/         \__\/         \__\/           ~~~~       \__\/         \__\/                     \__\/              
-</b> </p>
+</pre>
 
   <h2 style="color:#f0f6fc;">A python-based music downloader, designed for conveniently syncing your local library with your Spotify playlists.</h2>
 </div>
