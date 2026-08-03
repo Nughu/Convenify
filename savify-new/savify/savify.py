@@ -225,10 +225,11 @@ class Savify:
             # ARGS ADDED BY NUGHU
             'sleep_interval': 45,
             'max_sleep_interval': 60,
-            'sleep-requests': 20,
+            'sleep-requests': 30,
             'retries': 1,
             'retry-sleep': 30,
             'force_ipv4': True,
+            'keep-fragments': True,
 
         '''
             'extractor_args': {
