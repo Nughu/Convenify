@@ -213,7 +213,7 @@ class Savify:
             'format': 'bestaudio/best',
             'outtmpl': output_temp,
             'restrictfilenames': True,
-            'ignoreerrors': F,
+            'ignoreerrors': False,
             'nooverwrites': True,
             'noplaylist': True,
             'prefer_ffmpeg': True,
@@ -223,11 +223,11 @@ class Savify:
 			# --------------------------------------------------------------------------------------------------------------------------------------
 
             # ARGS ADDED BY NUGHU
-            "sleep_interval": 45,
-            "max_sleep_interval": 60,
-            "sleep-requests": 20,
-            "retries": 1,
-            "retry-sleep": 30, 
+            'sleep_interval': 45,
+            'max_sleep_interval': 60,
+            'sleep-requests': 20,
+            'retries': 1,
+            'retry-sleep': 30, 
 
 			# --------------------------------------------------------------------------------------------------------------------------------------
 
