@@ -12,6 +12,22 @@
   You can edit download.py and update_library.py to fit your local archive, specifying locations, Savify parameters and your own playlists to be synced by update_library.py. </br> </br>
 </p>
 
+<h3>Installation</h3>
+<p>
+To use the Savify Python module you will need your own Spotify developer application to access their API. To do this sign up here: </a href="https://developer.spotify.com">`. When you have made a new application take note of your client id and secret. You can pass the id and secret to Savify in two ways:
+
+Environment variables (recommended)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Now you need to add 2 environment variables to your system:
+
+``SPOTIPY_CLIENT_ID``
+
+``SPOTIPY_CLIENT_SECRET``
+
+To find out how to do this find a tutorial online for your specific operating system. Once you have done this make sure to restart your shell.
+</p>
+
 <h3>Known Issues</h3>
 <p>
   <b>There is one major issue that i wasn't able to fix yet:</b> </br>
