@@ -230,12 +230,14 @@ class Savify:
             'retry-sleep': 30,
             'force_ipv4': True,
 
+        '''
             'extractor_args': {
                 'youtube': {
-                    'player_client': 'ios',
+                    'player_client': ['web_embedded'],
                 }
             },
-            
+        '''
+
 			# --------------------------------------------------------------------------------------------------------------------------------------
 
             'postprocessors': [{
