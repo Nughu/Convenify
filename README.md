@@ -1,5 +1,18 @@
 <div align="center" style="background-color:#0d1117; padding:32px; border-radius:12px;">
-  <h1>Convenify</h1>
+<p> <b>
+      ___           ___           ___                        ___           ___                       ___                
+     /  /\         /  /\         /__/\          ___         /  /\         /__/\        ___          /  /\        ___    
+    /  /:/        /  /::\        \  \:\        /__/\       /  /:/_        \  \:\      /  /\        /  /:/_      /__/|   
+   /  /:/        /  /:/\:\        \  \:\       \  \:\     /  /:/ /\        \  \:\    /  /:/       /  /:/ /\    |  |:|   
+  /  /:/  ___   /  /:/  \:\   _____\__\:\       \  \:\   /  /:/ /:/_   _____\__\:\  /__/::\      /  /:/ /:/    |  |:|   
+ /__/:/  /  /\ /__/:/ \__\:\ /__/::::::::\  ___  \__\:\ /__/:/ /:/ /\ /__/::::::::\ \__\/\:\__  /__/:/ /:/   __|__|:|   
+ \  \:\ /  /:/ \  \:\ /  /:/ \  \:\~~\~~\/ /__/\ |  |:| \  \:\/:/ /:/ \  \:\~~\~~\/    \  \:\/\ \  \:\/:/   /__/::::\   
+  \  \:\  /:/   \  \:\  /:/   \  \:\  ~~~  \  \:\|  |:|  \  \::/ /:/   \  \:\  ~~~      \__\::/  \  \::/       ~\~~\:\  
+   \  \:\/:/     \  \:\/:/     \  \:\       \  \:\__|:|   \  \:\/:/     \  \:\          /__/:/    \  \:\         \  \:\ 
+    \  \::/       \  \::/       \  \:\       \__\::::/     \  \::/       \  \:\         \__\/      \  \:\         \__\/ 
+     \__\/         \__\/         \__\/           ~~~~       \__\/         \__\/                     \__\/              
+</b> </p>
+
   <h2 style="color:#f0f6fc;">A python-based music downloader, designed for conveniently syncing your local library with your Spotify playlists.</h2>
 </div>
 
@@ -24,7 +37,7 @@ To find out how to do this find a tutorial online for your specific operating sy
 <h3>Known Issues</h3>
 <p>
   <b>There is one major issue that i wasn't able to fix yet:</b> </br>
-  After downloading ~100 tracks, Youtube starts rejecting all HTTP requests, returning 403: Forbidden. Presumably this is some kind of DDoS protection. I've tried multiple suggested fixes from the issue page of yt-dlp, but to this point none of them really worked. I'm not even sure my yt-dlp arguments are passed properly, and because I'm not calling it directly but through Savify, i don't know where i'm even supposed to put them. I would massively appreciate any help you can provide to fix this. </br>
+  After downloading ~100 tracks, Youtube starts rejecting all HTTP requests, returning 403: Forbidden. Presumably this is some kind of DDoS protection. I've tried multiple suggested fixes from the issue page of yt-dlp, but to this point none of them really worked. Any help you could provide to fix this would be massively appreciated. </br>
   <b>And one issue that might not be fixable at all:</b> </br>
   In some cases, approximately 1% of downloaded tracks, Savify picks some random ass video to download audio from when it can't find the actual track. It will still label it as though it was the right track though, so you might only notice when loading it in your music player or DJ software. I don't think I can fix this, as it's an issue with Savify itself. A lot of the time when it happens, looking for the broken track on Youtube myself i can find and download it manually without issue. It doesn't happen often though, just make sure you have the right track loaded before transitioning your DnB track into some random makeup tutorial. x)
 </p>
