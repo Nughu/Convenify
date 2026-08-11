@@ -92,7 +92,7 @@ class Savify:
         else:
             self.logger.info('A new version of Savify is available, '
                              'get the latest release here: https://github.com/LaurenceRawlings/savify/releases')'''
-        self.logger.info('Using custom Savify fork modified for Convenify')
+        self.logger.info('Preparing download...')
 
     def _parse_query(self, query, query_type=Type.TRACK, artist_albums: bool = False) -> list:
         result = list()
