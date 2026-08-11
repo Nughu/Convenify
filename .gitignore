@@ -1,5 +1,7 @@
 cookies.txt
 playlists.json
+download-queue.txt
+download-queue_2.txt
 venv/
 python-3.13.14-embed-amd64/Lib/site-packages/**/__pycache__
 .cache
