@@ -229,7 +229,6 @@ class Savify:
             'retries': 1,
             'retry-sleep': 30,
             'force_ipv4': True,
-            'keep-fragments': True,
 
         '''
             'extractor_args': {
