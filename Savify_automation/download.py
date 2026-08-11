@@ -27,7 +27,7 @@ def download(url):
 		print(Fore.GREEN + "Download completed.")
 	if (url[25:30]) == "track":
 		Type = "Track"
-		subcmd = str("python \"" + SAVIFY_PATH + "\\savify\\__main__.py\" -o \"" + LIBRARY_PATH + "\" " + track_args + " " + url)
+		subcmd = str("python \"" + SAVIFY_PATH + "\\savify\\__main__.py\" -o \"" + LIBRARY_PATH + "\\Track\" " + track_args + " " + url)
 		sub = subprocess.Popen(subcmd, shell=True)
 		sub.wait()
 		print(Fore.GREEN + "Download completed.")
