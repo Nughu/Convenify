@@ -34,9 +34,11 @@ def tag_genre(dest, genre):
 for x in spotify_playlists:
 	if x != "library-path" and x != "playlist-name":
 		try:
-			download(naem=str(x), dest= LIBRARY_PATH + str(x["path"]), url=str(x["url"]))
-			if str(x["genre"]) != "":
-				tag_genre(dest= LIBRARY_PATH + str(x["path"]), genre=str(x["genre"]))
+			if not os.path.exists(LIBRARY_PATH + spotify_playlists[x]["path"]):
+				os.makedirs(LIBRARY_PATH + spotify_playlists[x]["path"])
+			download(naem=x, dest= LIBRARY_PATH + spotify_playlists[x]["path"], url=spotify_playlists[x]["link"])
+			if spotify_playlists[x]["genre"] != "":
+				tag_genre(dest= LIBRARY_PATH + spotify_playlists[x]["path"], genre=spotify_playlists[x]["genre"])
 			print(Fore.GREEN + "\nDownload of " + Fore.YELLOW + str(x) + Fore.LIGHTBLUE_EX + " completed.\n\n")
 			time.sleep(3)
 		except Exception as e:
