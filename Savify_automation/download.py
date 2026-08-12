@@ -13,15 +13,12 @@ PYTHON_PATH = str(ROOT_DIR / "python" / "python.exe")
 SAVIFY_PATH = str(ROOT_DIR / "savify-new")
 
 LIBRARY_PATH = json.loads(open(str(ROOT_DIR / "config.json")).read())["library_path"]
+for subdir in ("Playlist", "Track", "Album"):
+    (LIBRARY_PATH / subdir).mkdir(parents=True, exist_ok=True)
 
 track_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["track_args"]
 album_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["album_args"]
 playlist_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["playlist_args"]
-
-# yt-dlp args, probably don't work in savify directly
-#additional_args = " --cookies-from-browser chrome --sleep-requests 1.25 --min-sleep-interval 60 --max-sleep-interval 90"
-#extractor_args = "--extractor-args \"youtube:player-client=default,-tv_simply\""
-#extractor_args = "\"youtube:player_client=ios\" -f \"bv[protocol=m3u8_native]+ba[protocol=m3u8_native]\""
 
 
 def download(url):
@@ -31,7 +28,7 @@ def download(url):
 		Type = "Playlist"
 		subcmd = str(
 			f"\"{PYTHON_PATH}\" -m savify "
-			f"-o \"{LIBRARY_PATH}\\Playlist\" "
+			f"-o \"{LIBRARY_PATH / 'Playlist'}\" "
 			f"{playlist_args} "
 			f"{url}"
 			)
@@ -46,7 +43,7 @@ def download(url):
 		
 		subcmd = (
 			f"\"{PYTHON_PATH}\" -m savify "
-			f"-o \"{LIBRARY_PATH}\\Track\" "
+			f"-o \"{LIBRARY_PATH / 'Track'}\" "
 			f"{track_args} "
 			f"{url}"
 			)
@@ -60,7 +57,7 @@ def download(url):
 		Type = "Album"
 		subcmd = str(
 			f"\"{PYTHON_PATH}\" -m savify "
-			f"-o \"{LIBRARY_PATH}\\Album\" "
+			f"-o \"{LIBRARY_PATH / 'Album'}\" "
 			f"{album_args} "
 			f"{url}"
 			)
