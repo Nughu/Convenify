@@ -22,6 +22,11 @@ When you have made a new application take note of your client id and secret. Now
 SPOTIPY_CLIENT_SECRET</b> </br>
 To find out how to do this find a tutorial online for your specific operating system.</p>
 
+<h3>Usage</h3>
+<p>
+On Windows, you just need to set your library path in config.json and start either script with the included .bat launchers. For update_library.bat, you also need to specify playlists to update in playlists.json.
+</p>
+
 <h3>Known Issues</h3>
 <p>
   <b>There is one major issue that i wasn't able to fix yet:</b> </br>
