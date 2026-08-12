@@ -1,5 +1,4 @@
 """Main module for Savify."""
-
 __all__ = ['Savify']
 
 import time
@@ -260,24 +259,33 @@ class Savify:
 
             **self.ydl_options,
         }
-
-        output_temp = output_temp.replace('%(ext)s', self.download_format)
-
-        if self.download_format == Format.MP3:
-            options['postprocessor_args'].append('-codec:a')
-            options['postprocessor_args'].append('libmp3lame')
-
         if self.ffmpeg_location != 'ffmpeg':
             options['ffmpeg_location'] = self.ffmpeg_location
 
         attempt = 0
+        downloaded_temp = None
         while True:
             attempt += 1
 
             try:
                 with YoutubeDL(options) as ydl:
                     ydl.download([query])
-                    if check_file(Path(output_temp)):
+
+                    # The downloaded file may have a different extension (eg. .webm)
+                    # than the final post-processed extension (.mp3). Check for any
+                    # temp file matching the track id to detect completion.
+                    from pathlib import Path as _Path
+                    temp_dir = _Path(self.path_holder.get_temp_dir())
+                    matches = list(temp_dir.glob(f"{track.id}.*"))
+                    if matches:
+                        # Prefer the post-processed file matching the requested format
+                        preferred = temp_dir / f"{track.id}.{self.download_format}"
+                        if preferred.exists():
+                            downloaded_temp = preferred
+                        else:
+                            # case-insensitive match fallback
+                            lower_matches = [m for m in matches if m.suffix.lower() == f'.{self.download_format.lower()}']
+                            downloaded_temp = lower_matches[0] if lower_matches else matches[0]
                         break
 
             except YoutubeDlExtractionError as ex:
@@ -288,9 +296,13 @@ class Savify:
                     self.completed += 1
                     return status
 
+        # decide which temp file was actually created by yt-dlp
+        from pathlib import Path as _Path2
+        source_temp = _Path2(downloaded_temp) if downloaded_temp is not None else Path(output_temp)
+
         if self.download_format != Format.MP3 or self.skip_cover_art:
             try:
-                move(output_temp, output)
+                move(str(source_temp), output)
             except ShutilError:
                 status['returncode'] = 1
                 status['error'] = 'Filesystem error.'
@@ -315,10 +327,10 @@ class Savify:
                 self.downloaded_cover_art[cover_art_name] = cover_art
 
             ffmpeg = FFmpeg(executable=self.ffmpeg_location,
-                            inputs={str(output_temp): None, str(cover_art): None, },
+                            inputs={str(source_temp): None, str(cover_art): None, },
                             outputs={
                                 str(
-                                    output): '-loglevel quiet -hide_banner -y -map 0:0 -map 1:0 -c copy -id3v2_version 3 '
+                                    output): '-loglevel quiet -hide_banner -y -map 0:a -map 1:0 -c:a libmp3lame -q:a 2 -id3v2_version 3 '
                                              '-metadata:s:v title="Album cover" -metadata:s:v comment="Cover (front)" '
                                 # '-af "silenceremove=start_periods=1:start_duration=1:start_threshold=-60dB:'
                                 # 'detection=peak,aformat=dblp,areverse,silenceremove=start_periods=1:'
@@ -334,7 +346,7 @@ class Savify:
             except FFRuntimeError:
                 if attempt > self.retry:
                     try:
-                        move(output_temp, output)
+                        move(str(source_temp), output)
                         break
 
                     except ShutilError:
@@ -347,7 +359,11 @@ class Savify:
         status['returncode'] = 0
         try:
             from os import remove
-            remove(output_temp)
+            try:
+                remove(str(source_temp))
+            except Exception:
+                # fallback to expected path
+                remove(output_temp)
 
         except OSError:
             pass

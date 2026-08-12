@@ -12,7 +12,7 @@ ROOT_DIR = SCRIPT_DIR.parent
 PYTHON_PATH = str(ROOT_DIR / "python" / "python.exe")
 SAVIFY_PATH = str(ROOT_DIR / "savify-new")
 
-LIBRARY_PATH = json.loads(open(str(ROOT_DIR / "config.json")).read())["library_path"]
+LIBRARY_PATH = Path(json.loads(open(str(ROOT_DIR / "config.json")).read())["library_path"])
 for subdir in ("Playlist", "Track", "Album"):
     (LIBRARY_PATH / subdir).mkdir(parents=True, exist_ok=True)
 
