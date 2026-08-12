@@ -3,5 +3,6 @@ playlists.json
 download-queue.txt
 download-queue_2.txt
 venv/
-python/**/__pycache__
+**cache**
 .cache
+ffmpeg/**
