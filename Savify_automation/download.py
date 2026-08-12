@@ -1,12 +1,16 @@
 import subprocess
 from time import sleep
 from colorama import Fore, Style, init
+from pathlib import Path
 
 init(autoreset=True)
 
 # Variables
+BASE_PATH = Path(__file__).resolve().parent
+PYTHON_PATH = BASE_PATH / "python" / "python.exe"
+SAVIFY_PATH = BASE_PATH / "savify-new"
+
 LIBRARY_PATH = "J:\\DJing\\Musiq"
-SAVIFY_PATH = ".\\savify-new"
 
 track_args = "-g \"%artist%\""
 album_args = "-g \"%artist%/%album%\""
