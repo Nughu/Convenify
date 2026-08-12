@@ -1,2 +1,2 @@
 @echo off
-python .\Savify_automation\update_library.py
+.\python\python.exe .\Savify_automation\update_library.py
