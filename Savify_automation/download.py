@@ -1,5 +1,6 @@
 import subprocess
 from time import sleep
+import json
 from colorama import Fore, Style, init
 from pathlib import Path
 
@@ -11,11 +12,11 @@ ROOT_DIR = SCRIPT_DIR.parent
 PYTHON_PATH = str(ROOT_DIR / "python" / "python.exe")
 SAVIFY_PATH = str(ROOT_DIR / "savify-new")
 
-LIBRARY_PATH = "C:\\DL\\Musiq"
+LIBRARY_PATH = json.loads(open(str(ROOT_DIR / "config.json")).read())["library_path"]
 
-track_args = "-g \"%artist%\""
-album_args = "-g \"%artist%/%album%\""
-playlist_args = "-g \"%playlist%\""
+track_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["track_args"]
+album_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["album_args"]
+playlist_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["playlist_args"]
 
 # yt-dlp args, probably don't work in savify directly
 #additional_args = " --cookies-from-browser chrome --sleep-requests 1.25 --min-sleep-interval 60 --max-sleep-interval 90"
