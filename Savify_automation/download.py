@@ -95,7 +95,7 @@ while True:
 			with open(userinput) as file:
 				read = file.readlines()
 				for x in read:
-					y = x.replace("\n", "").replace(" ", "")
+					y = x.replace("\n", "").replace(" ", "").replace("intl-de/", "")
 					if y != "" and not y.startswith("#"):
 						print(Fore.LIGHTBLUE_EX + "\nDownloading from " + userinput + "...\n" + Fore.YELLOW + (str((read.index(x)) + 1) + " / " + str(len(read))))
 						sleep(1)
