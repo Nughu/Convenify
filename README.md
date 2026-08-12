@@ -20,7 +20,10 @@ To do this sign up here: https://developer.spotify.com</br>
 When you have made a new application take note of your client id and secret. Now you need to add 2 environment variables to your system:</br>
 <b>SPOTIPY_CLIENT_ID</br>
 SPOTIPY_CLIENT_SECRET</b> </br>
-To find out how to do this find a tutorial online for your specific operating system.</p>
+To find out how to do this find a tutorial online for your specific operating system. </br> </br>
+Additionally, for yt-dlp to work you need to install Deno, yt-dlp's default JS runtime. On Windows, you can just execute this command in cmd: </br>
+<b>winget install --id=DenoLand.Deno</b>
+</p>
 
 <h3>Usage</h3>
 <p>
