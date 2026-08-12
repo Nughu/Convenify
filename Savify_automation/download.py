@@ -6,9 +6,10 @@ from pathlib import Path
 init(autoreset=True)
 
 # Variables
-BASE_PATH = Path(__file__).resolve().parent
-PYTHON_PATH = BASE_PATH / "python" / "python.exe"
-SAVIFY_PATH = BASE_PATH / "savify-new"
+SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = SCRIPT_DIR.parent
+PYTHON_PATH = str(ROOT_DIR / "python" / "python.exe")
+SAVIFY_PATH = str(ROOT_DIR / "savify-new")
 
 LIBRARY_PATH = "J:\\DJing\\Musiq"
 
@@ -21,25 +22,53 @@ playlist_args = "-g \"%playlist%\""
 #extractor_args = "--extractor-args \"youtube:player-client=default,-tv_simply\""
 #extractor_args = "\"youtube:player_client=ios\" -f \"bv[protocol=m3u8_native]+ba[protocol=m3u8_native]\""
 
+
 def download(url):
+
+	# Playlist
 	if (url[25:33]) == "playlist":
 		Type = "Playlist"
-		subcmd = str("python \"" + SAVIFY_PATH + "\\savify\\__main__.py\" -o \"" + LIBRARY_PATH + "\\Playlist\" " + playlist_args + " " + url)
+		subcmd = str(
+			f"\"{PYTHON_PATH}\" -m savify "
+			f"-o \"{LIBRARY_PATH}\\Playlist\" "
+			f"{playlist_args} "
+			f"{url}"
+			)
+		
 		sub = subprocess.Popen(subcmd, shell=True)
 		sub.wait()
 		print(Fore.GREEN + "Download completed.")
+
+	# Track
 	if (url[25:30]) == "track":
 		Type = "Track"
-		subcmd = str("python \"" + SAVIFY_PATH + "\\savify\\__main__.py\" -o \"" + LIBRARY_PATH + "\\Track\" " + track_args + " " + url)
+		
+		subcmd = (
+			f"\"{PYTHON_PATH}\" -m savify "
+			f"-o \"{LIBRARY_PATH}\\Track\" "
+			f"{track_args} "
+			f"{url}"
+			)
+		
 		sub = subprocess.Popen(subcmd, shell=True)
 		sub.wait()
 		print(Fore.GREEN + "Download completed.")
+
+	# Album
 	if (url[25:30]) == "album":
 		Type = "Album"
-		subcmd = str("python \"" + SAVIFY_PATH + "\\savify\\__main__.py\" -o \"" + LIBRARY_PATH + "\\Album\" " + album_args + " " + url)
+		subcmd = str(
+			f"\"{PYTHON_PATH}\" -m savify "
+			f"-o \"{LIBRARY_PATH}\\Album\" "
+			f"{album_args} "
+			f"{url}"
+			)
+		
 		sub = subprocess.Popen(subcmd, shell=True)
 		sub.wait()
 		print(Fore.GREEN + "Download completed.")
+
+	# Neither
 	if (url[25:33]) != "playlist" and (url[25:30]) != "track" and (url[25:30]) != "album":
 		Type = "Other"
 		print(Fore.RED + "Error in link resolve:")
@@ -56,14 +85,14 @@ def download(url):
 			print(Fore.RESET + Style.DIM + "Download aborted.")
 			Style.RESET()
 
+
+# Main loop
 while True:
 	try:
 		print(Fore.LIGHTBLUE_EX + "Enter Spotify link (or .txt file containing multiple links).")
 		userinput = ((input(Fore.RESET + "")).replace("intl-de/", ""))
-		
 		if userinput == "queue":
 			userinput = "download-queue.txt"
-			
 		if userinput[-4:] == ".txt":
 			with open(userinput) as file:
 				read = file.readlines()
@@ -75,14 +104,11 @@ while True:
 						download(y)
 		elif userinput[13:20] == "spotify":
 			download(userinput)
-		
 		else:
 			print(Fore.RED + "\n############################\nNOT UNDERSTOOD!\n############################\n")
+			input("")
 		print(Fore.RESET + "\n\n\n")
 		sleep(1)
 	except Exception as e:
 		print(Fore.RED + f"\n\n############################\n\n{e}\n\n############################\n\n\n")
-
-
-#input(Fore.LIGHTBLUE_EX + "Press ENTER to quit.")
-#print(Fore.LIGHTMAGENTA_EX + "\n\n\n\n\n\nSee ya!\n\n\n\n\n\n")
+		input("")
