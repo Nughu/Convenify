@@ -11,7 +11,7 @@ ROOT_DIR = SCRIPT_DIR.parent
 PYTHON_PATH = str(ROOT_DIR / "python" / "python.exe")
 SAVIFY_PATH = str(ROOT_DIR / "savify-new")
 
-LIBRARY_PATH = "C:\DL\Musiq"
+LIBRARY_PATH = "C:\\DL\\Musiq"
 
 track_args = "-g \"%artist%\""
 album_args = "-g \"%artist%/%album%\""
