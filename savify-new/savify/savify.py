@@ -2,6 +2,7 @@
 __all__ = ['Savify']
 
 import time
+import traceback
 from multiprocessing import cpu_count
 from multiprocessing.dummy import Pool as ThreadPool
 from pathlib import Path
@@ -12,6 +13,7 @@ import validators
 import tldextract
 import requests
 from yt_dlp import YoutubeDL
+from yt_dlp.utils import DownloadError
 from ffmpy import FFmpeg, FFRuntimeError
 
 from .utils import PathHolder, safe_path_string, check_env, check_ffmpeg, check_file, create_dir, clean
@@ -45,7 +47,7 @@ def _progress(data) -> None:
 
 class Savify:
     def __init__(self, api_credentials=None, quality=Quality.BEST, download_format=Format.MP3,
-                 group=None, path_holder: PathHolder = None, retry: int = 3,
+                 group=None, path_holder: PathHolder = None, retry: int = 1,
                  ydl_options: dict = None, skip_cover_art: bool = False, logger: Logger = None,
                  ffmpeg_location: str = 'ffmpeg') -> None:
 
@@ -295,6 +297,20 @@ class Savify:
                     self.logger.error(ex.message)
                     self.completed += 1
                     return status
+
+            except DownloadError as ex:
+                error_msg = str(ex)
+                # Log the error message at ERROR level for user visibility
+                self.logger.error(f"Download error for '{str(track)}': {error_msg}")
+                # Log full traceback at DEBUG level
+                self.logger.debug(f"Traceback for '{str(track)}':\n{traceback.format_exc()}")
+                
+                if attempt > self.retry:
+                    status['returncode'] = 1
+                    status['error'] = error_msg
+                    self.completed += 1
+                    return status
+                # Continue retry loop
 
         # decide which temp file was actually created by yt-dlp
         from pathlib import Path as _Path2
