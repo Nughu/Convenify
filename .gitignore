@@ -5,4 +5,3 @@ download-queue_2.txt
 venv/
 **cache**
 .cache
-ffmpeg/**
