@@ -326,16 +326,32 @@ class Savify:
                 cover_art = self.path_holder.download_file(track.cover_art_url, extension='jpg')
                 self.downloaded_cover_art[cover_art_name] = cover_art
 
+            # Build ffmpeg args and explicit metadata to embed into final MP3
+            def _esc(val):
+                try:
+                    return str(val).replace('"', '\\"')
+                except Exception:
+                    return ''
+
+            if str(source_temp).lower().endswith(f'.{self.download_format.lower()}'):
+                ffmpeg_output_args = '-loglevel quiet -hide_banner -y -map 0:0 -map 1:0 -c copy -id3v2_version 3 '
+            else:
+                ffmpeg_output_args = '-loglevel quiet -hide_banner -y -map 0:a -map 1:0 -c:a libmp3lame -q:a 2 -id3v2_version 3 '
+
+            meta_parts = [
+                f'-metadata title="{_esc(track.name)}"',
+                f'-metadata album="{_esc(track.album_name)}"',
+                f'-metadata artist="{_esc("/".join(track.artists))}"',
+                f'-metadata date="{_esc(track.release_date)}"',
+                f'-metadata track="{_esc(str(track.track_number) + "/" + str(track.album_track_count))}"',
+                f'-metadata disc="{_esc(track.disc_number)}"',
+            ]
+            metadata_str = ' ' + ' '.join(meta_parts) + ' '
+
             ffmpeg = FFmpeg(executable=self.ffmpeg_location,
-                            inputs={str(source_temp): None, str(cover_art): None, },
+                            inputs={str(source_temp): None, str(cover_art): None},
                             outputs={
-                                str(
-                                    output): '-loglevel quiet -hide_banner -y -map 0:a -map 1:0 -c:a libmp3lame -q:a 2 -id3v2_version 3 '
-                                             '-metadata:s:v title="Album cover" -metadata:s:v comment="Cover (front)" '
-                                # '-af "silenceremove=start_periods=1:start_duration=1:start_threshold=-60dB:'
-                                # 'detection=peak,aformat=dblp,areverse,silenceremove=start_periods=1:'
-                                # 'start_duration=1:start_threshold=-60dB:'
-                                # 'detection=peak,aformat=dblp,areverse"'
+                                str(output): ffmpeg_output_args + metadata_str + '-metadata:s:v title="Album cover" -metadata:s:v comment="Cover (front)" '
                             }
                             )
 
