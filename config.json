@@ -1,6 +1,6 @@
 
 {
-    "library_path": "J:\\DJing\\Musiq",
+    "library_path": "C:\\DL\\Musiq",
     "track_args": "-g \"%artist%\"",
     "album_args": "-g \"%artist%/%album%\"",
     "playlist_args": "-g \"%playlist%\""
