@@ -15,7 +15,6 @@ from .exceptions import FFmpegNotInstalledError, SpotifyApiCredentialsNotSetErro
     InternetConnectionError
 
 BANNER = rf"""
-
       ___           ___           ___                        ___           ___                       ___                
      /  /\         /  /\         /__/\          ___         /  /\         /__/\        ___          /  /\        ___    
     /  /:/        /  /::\        \  \:\        /__/\       /  /:/_        \  \:\      /  /\        /  /:/_      /__/|   
