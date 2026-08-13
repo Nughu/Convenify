@@ -1,7 +1,7 @@
 <div align="center" style="background-color:#0d1117; padding:32px; border-radius:12px;">
 
   <img src="./GithubBanner.png" alt="Github banner" width="1080" height="383" />
-  <h2 style="color:#f0f6fc;">A python-based music downloader designed for convenience.</h2>
+  <h2 style="color:#f0f6fc;">A python-based music downloader designed for quality and convenience.</h2>
 </div>
 
 <h3>Description</h3>
