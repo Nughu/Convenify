@@ -57,7 +57,7 @@ def print_batch_summary(results):
         print(Fore.YELLOW + "No links to summarize.")
         return
 
-    print(f"\n{Fore.MAGENTA}======= {Fore.RESET}Final batch download report{Fore.MAGENTA} ======={Fore.RESET}\n")
+    print(f"\n{Fore.MAGENTA}======= Final batch download report ======={Fore.RESET}\n")
     for item in results:
         link_number = item["link_number"]
         file_line_number = item.get("file_line_number")
