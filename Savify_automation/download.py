@@ -194,7 +194,7 @@ def download(url, show_output=True):
 		print((Fore.RESET + url) + "\n" + (Fore.RED + "                         I"))
 		conanyway = ""
 		while conanyway not in ["Y", "y", "Yes", "yes", "YES", "N", "n", "No", "no", "NO"]:
-			conanyway = input(Fore.LIGHTBLUE_EX + "\ntry anyway? (Y/N)")
+			conanyway = input(Fore.LIGHTBLUE_EX + "\ntry anyway? (Y/N)\n")
 		if conanyway in ["Y", "y", "Yes", "yes", "YES"]:
 			print((Fore.YELLOW + "\nType: ") + (Fore.LIGHTGREEN_EX + Type) + (Fore.LIGHTBLUE_EX + "\n\n\nlaunching Savify..."))
 			returncode, result_output = run_savify_command(subcmd, show_output=show_output)
@@ -244,10 +244,9 @@ while True:
 			download(userinput)
 		else:
 			print(Fore.RED + "\n############################\nNOT UNDERSTOOD!\n############################\n")
-			input("")
 		sleep(1)
 		input(Fore.LIGHTBLUE_EX + "\nPress Enter to continue...")
 		clear_console()
 	except Exception as e:
-		print(Fore.RED + f"\n\n############################\n\n{e}\n\n############################\n\n\n")
-		input("")
+		print(Fore.RED + f"\n\n############################\n\n{e}\n\n############################\n\n")
+		input(Fore.LIGHTBLUE_EX + "Press Enter to continue...")
