@@ -273,22 +273,31 @@ class Savify:
                 with YoutubeDL(options) as ydl:
                     ydl.download([query])
 
-                    # The downloaded file may have a different extension (eg. .webm)
-                    # than the final post-processed extension (.mp3). Check for any
-                    # temp file matching the track id to detect completion.
+                    # Some YouTube searches resolve to a playlist with 0 items instead of
+                    # raising an exception. In that case, fail this track immediately so the
+                    # queue can continue without getting stuck in an endless retry loop.
                     from pathlib import Path as _Path
                     temp_dir = _Path(self.path_holder.get_temp_dir())
                     matches = list(temp_dir.glob(f"{track.id}.*"))
-                    if matches:
-                        # Prefer the post-processed file matching the requested format
-                        preferred = temp_dir / f"{track.id}.{self.download_format}"
-                        if preferred.exists():
-                            downloaded_temp = preferred
-                        else:
-                            # case-insensitive match fallback
-                            lower_matches = [m for m in matches if m.suffix.lower() == f'.{self.download_format.lower()}']
-                            downloaded_temp = lower_matches[0] if lower_matches else matches[0]
-                        break
+                    if not matches:
+                        error_msg = f"No results found for '{str(track)}' using query '{query}'."
+                        self.logger.error(error_msg)
+                        status['returncode'] = 1
+                        status['error'] = error_msg
+                        self.completed += 1
+                        return status
+
+                    # The downloaded file may have a different extension (eg. .webm)
+                    # than the final post-processed extension (.mp3). Check for any
+                    # temp file matching the track id to detect completion.
+                    preferred = temp_dir / f"{track.id}.{self.download_format}"
+                    if preferred.exists():
+                        downloaded_temp = preferred
+                    else:
+                        # case-insensitive match fallback
+                        lower_matches = [m for m in matches if m.suffix.lower() == f'.{self.download_format.lower()}']
+                        downloaded_temp = lower_matches[0] if lower_matches else matches[0]
+                    break
 
             except YoutubeDlExtractionError as ex:
                 if attempt > self.retry:
