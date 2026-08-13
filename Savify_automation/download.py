@@ -1,6 +1,7 @@
 import subprocess
-from time import sleep
+import os
 import json
+from time import sleep
 from colorama import Fore, Style, init
 from pathlib import Path
 
@@ -20,6 +21,14 @@ track_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["track_args"
 album_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["album_args"]
 playlist_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["playlist_args"]
 
+
+def clear_console():
+    if os.name == "nt":
+        subprocess.run(["cmd", "/c", "cls"], check=False, shell=False)
+    elif os.name == "posix":
+        subprocess.run(["clear"], check=False)
+    else:
+        print("\n" * 50)
 
 def _parse_failed_tracks(output):
     failed = []
@@ -48,7 +57,7 @@ def print_batch_summary(results):
         print(Fore.YELLOW + "No links to summarize.")
         return
 
-    print(Fore.LIGHTBLUE_EX + "\n=== Final batch download report ===")
+    print(f"\n{Fore.MAGENTA}===== {Fore.RESET}Final batch download report{Fore.MAGENTA} ====={Fore.RESET}\n")
     for item in results:
         link_number = item["link_number"]
         file_line_number = item.get("file_line_number")
@@ -56,20 +65,20 @@ def print_batch_summary(results):
         failed_tracks = item["result"].get("failed_tracks", [])
 
         if file_line_number is not None:
-            location_label = f"Link {link_number} (line {file_line_number})"
+            location_label = f"{Fore.RESET}Link {link_number:>2}  ({Fore.YELLOW}line {file_line_number:>2}{Fore.RESET})"
         else:
-            location_label = f"Link {link_number}"
+            location_label = f"{Fore.RESET}Link {link_number:>2}"
 
         if not failed_tracks:
-            print(Fore.GREEN + f"{location_label}: OK - {url}")
+            print(f"{location_label:<26}: {Fore.GREEN}OK")
             continue
 
-        print(Fore.RED + f"{location_label}: FAILED - {url}")
+        print(f"{location_label:<26}: {Fore.RED}FAILED")
         for failed in failed_tracks:
-            print(Fore.RED + f"  - Song: {failed['song']}")
-            print(Fore.RED + f"    Reason: {failed['reason']}")
+            print(Fore.RED + f"  - {failed['song']}")
+            print(Fore.RED + f"    {failed['reason']}{Fore.RESET}")
 
-    print(Fore.RESET + "=================================")
+    print(Fore.MAGENTA + "\n=======================================" + Fore.RESET + "\n")
 
 
 def run_savify_command(subcmd, show_output=True):
@@ -210,9 +219,9 @@ def download(url, show_output=True):
 # Main loop
 while True:
 	try:
-		print(Fore.LIGHTBLUE_EX + "Enter Spotify link (or .txt file containing multiple links).")
+		print(f"{Fore.LIGHTBLUE_EX}Enter Spotify link (or .txt file containing multiple links).{Fore.RESET}")
 		userinput = ((input(Fore.RESET + "")).replace("intl-de/", ""))
-		if userinput == "queue":
+		if userinput.lower() == "queue" or userinput.lower() == "q":
 			userinput = "download-queue.txt"
 		if userinput[-4:] == ".txt":
 			with open(userinput) as file:
@@ -224,18 +233,21 @@ while True:
 						valid_links.append((line_number, y))
 				batch_results = []
 				for processed_count, (line_number, y) in enumerate(valid_links, start=1):
-					print(Fore.LIGHTBLUE_EX + "\nDownloading from " + userinput + "...\n" + Fore.YELLOW + (str(processed_count) + " / " + str(len(valid_links))))
+					clear_console()
+					print(f"{Fore.LIGHTBLUE_EX}Downloading from {userinput}...{Fore.RESET}\n{Fore.YELLOW}{str(processed_count)} / {str(len(valid_links))}{Fore.RESET}")
 					sleep(1)
 					result = download(y, show_output=True)
 					batch_results.append({"link_number": processed_count, "file_line_number": line_number, "url": y, "result": result})
+				clear_console()
 				print_batch_summary(batch_results)
 		elif userinput[13:20] == "spotify":
 			download(userinput)
 		else:
 			print(Fore.RED + "\n############################\nNOT UNDERSTOOD!\n############################\n")
 			input("")
-		print(Fore.RESET + "\n\n\n")
 		sleep(1)
+		input(Fore.LIGHTBLUE_EX + "\nPress Enter to continue...")
+		clear_console()
 	except Exception as e:
 		print(Fore.RED + f"\n\n############################\n\n{e}\n\n############################\n\n\n")
 		input("")
