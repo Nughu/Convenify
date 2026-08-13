@@ -280,7 +280,7 @@ class Savify:
                     temp_dir = _Path(self.path_holder.get_temp_dir())
                     matches = list(temp_dir.glob(f"{track.id}.*"))
                     if not matches:
-                        error_msg = f"No results found for '{str(track)}' using query '{query}'."
+                        error_msg = f"No results found for '{str(track)}'."
                         self.logger.error(error_msg)
                         status['returncode'] = 1
                         status['error'] = error_msg
