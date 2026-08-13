@@ -32,7 +32,7 @@ On Windows, you just need to set your library path in config.json (use double in
 
 <h3>Known Issues</h3>
 <p>
-  <b>There is one major issue that i wasn't able to fix yet:</b> </br>
+  <b>One major issue that i wasn't able to fix yet:</b> </br>
   After downloading ~50 tracks, Youtube starts rejecting HTTP requests, returning 403: Forbidden. Presumably this is some kind of DDoS protection. I've modified Savify to include long pauses between downloads and only retry downloading once, and that seems to have improved it a lot. Sill, i always run a download queue twice, to ensure everything has been downloaded successfully. Any help you might provide to further improve this would be appreciated. </br>
   <b>There's currently no fully working version for Linux</b> </br>
   I've started implementing pathlib to uncouple Convenify from Windows, but i'm not a Linux desktop user so if anyone wants to help out with that, feel free to contribute.</br>
