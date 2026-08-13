@@ -21,7 +21,58 @@ album_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["album_args"
 playlist_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["playlist_args"]
 
 
-def download(url):
+def _parse_failed_tracks(output):
+    failed = []
+    if not output or "Failed Tracks:" not in output:
+        return failed
+
+    current_song = None
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("Song:"):
+            current_song = stripped.split("Song:", 1)[1].strip()
+        elif stripped.startswith("Reason:"):
+            if current_song:
+                failed.append({
+                    "song": current_song,
+                    "reason": stripped.split("Reason:", 1)[1].strip(),
+                })
+                current_song = None
+    return failed
+
+
+def print_batch_summary(results):
+    if not results:
+        print(Fore.YELLOW + "No links to summarize.")
+        return
+
+    print(Fore.LIGHTBLUE_EX + "\n=== Final batch download report ===")
+    for item in results:
+        link_number = item["link_number"]
+        file_line_number = item.get("file_line_number")
+        url = item["url"]
+        failed_tracks = item["result"].get("failed_tracks", [])
+
+        if file_line_number is not None:
+            location_label = f"Link {link_number} (line {file_line_number})"
+        else:
+            location_label = f"Link {link_number}"
+
+        if not failed_tracks:
+            print(Fore.GREEN + f"{location_label}: OK - {url}")
+            continue
+
+        print(Fore.RED + f"{location_label}: FAILED - {url}")
+        for failed in failed_tracks:
+            print(Fore.RED + f"  - Song: {failed['song']}")
+            print(Fore.RED + f"    Reason: {failed['reason']}")
+
+    print(Fore.RESET + "=================================")
+
+
+def download(url, show_output=True):
 
 	# Playlist
 	if (url[25:33]) == "playlist":
@@ -33,9 +84,22 @@ def download(url):
 			f"{url}"
 			)
 		
-		sub = subprocess.Popen(subcmd, shell=True)
-		sub.wait()
-		print(Fore.GREEN + "Download completed.")
+		completed = subprocess.run(subcmd, shell=True, capture_output=True, text=True)
+		result_output = "\n".join(part for part in (completed.stdout, completed.stderr) if part).strip()
+		failed_tracks = _parse_failed_tracks(result_output)
+		result = {
+			"url": url,
+			"type": Type,
+			"returncode": completed.returncode,
+			"failed_tracks": failed_tracks,
+		}
+		if show_output and result_output:
+			print(result_output)
+		if not failed_tracks:
+			print(Fore.GREEN + "Download completed.")
+		else:
+			print(Fore.RED + f"Download finished with {len(failed_tracks)} failed track(s).")
+		return result
 
 	# Track
 	if (url[25:30]) == "track":
@@ -48,9 +112,22 @@ def download(url):
 			f"{url}"
 			)
 		
-		sub = subprocess.Popen(subcmd, shell=True)
-		sub.wait()
-		print(Fore.GREEN + "Download completed.")
+		completed = subprocess.run(subcmd, shell=True, capture_output=True, text=True)
+		result_output = "\n".join(part for part in (completed.stdout, completed.stderr) if part).strip()
+		failed_tracks = _parse_failed_tracks(result_output)
+		result = {
+			"url": url,
+			"type": Type,
+			"returncode": completed.returncode,
+			"failed_tracks": failed_tracks,
+		}
+		if show_output and result_output:
+			print(result_output)
+		if not failed_tracks:
+			print(Fore.GREEN + "Download completed.")
+		else:
+			print(Fore.RED + f"Download finished with {len(failed_tracks)} failed track(s).")
+		return result
 
 	# Album
 	if (url[25:30]) == "album":
@@ -62,9 +139,22 @@ def download(url):
 			f"{url}"
 			)
 		
-		sub = subprocess.Popen(subcmd, shell=True)
-		sub.wait()
-		print(Fore.GREEN + "Download completed.")
+		completed = subprocess.run(subcmd, shell=True, capture_output=True, text=True)
+		result_output = "\n".join(part for part in (completed.stdout, completed.stderr) if part).strip()
+		failed_tracks = _parse_failed_tracks(result_output)
+		result = {
+			"url": url,
+			"type": Type,
+			"returncode": completed.returncode,
+			"failed_tracks": failed_tracks,
+		}
+		if show_output and result_output:
+			print(result_output)
+		if not failed_tracks:
+			print(Fore.GREEN + "Download completed.")
+		else:
+			print(Fore.RED + f"Download finished with {len(failed_tracks)} failed track(s).")
+		return result
 
 	# Neither
 	if (url[25:33]) != "playlist" and (url[25:30]) != "track" and (url[25:30]) != "album":
@@ -76,12 +166,26 @@ def download(url):
 			conanyway = input(Fore.LIGHTBLUE_EX + "\ntry anyway? (Y/N)")
 		if conanyway in ["Y", "y", "Yes", "yes", "YES"]:
 			print((Fore.YELLOW + "\nType: ") + (Fore.LIGHTGREEN_EX + Type) + (Fore.LIGHTBLUE_EX + "\n\n\nlaunching Savify..."))
-			sub = subprocess.Popen(subcmd, shell=True)
-			sub.wait()
-			print(Fore.GREEN + "Download completed.")
+			completed = subprocess.run(subcmd, shell=True, capture_output=True, text=True)
+			result_output = "\n".join(part for part in (completed.stdout, completed.stderr) if part).strip()
+			failed_tracks = _parse_failed_tracks(result_output)
+			result = {
+				"url": url,
+				"type": Type,
+				"returncode": completed.returncode,
+				"failed_tracks": failed_tracks,
+			}
+			if result_output:
+				print(result_output)
+			if not failed_tracks:
+				print(Fore.GREEN + "Download completed.")
+			else:
+				print(Fore.RED + f"Download finished with {len(failed_tracks)} failed track(s).")
+			return result
 		if conanyway in ["N", "n", "No", "no", "NO"]:
 			print(Fore.RESET + Style.DIM + "Download aborted.")
 			Style.RESET()
+		return {"url": url, "type": Type, "returncode": 1, "failed_tracks": [{"song": url, "reason": "Download aborted by user."}]}
 
 
 # Main loop
@@ -94,12 +198,18 @@ while True:
 		if userinput[-4:] == ".txt":
 			with open(userinput) as file:
 				read = file.readlines()
-				for x in read:
+				valid_links = []
+				for line_number, x in enumerate(read, start=1):
 					y = x.replace("\n", "").replace(" ", "").replace("intl-de/", "")
 					if y != "" and not y.startswith("#"):
-						print(Fore.LIGHTBLUE_EX + "\nDownloading from " + userinput + "...\n" + Fore.YELLOW + (str((read.index(x)) + 1) + " / " + str(len(read))))
-						sleep(1)
-						download(y)
+						valid_links.append((line_number, y))
+				batch_results = []
+				for processed_count, (line_number, y) in enumerate(valid_links, start=1):
+					print(Fore.LIGHTBLUE_EX + "\nDownloading from " + userinput + "...\n" + Fore.YELLOW + (str(processed_count) + " / " + str(len(valid_links))))
+					sleep(1)
+					result = download(y, show_output=False)
+					batch_results.append({"link_number": processed_count, "file_line_number": line_number, "url": y, "result": result})
+				print_batch_summary(batch_results)
 		elif userinput[13:20] == "spotify":
 			download(userinput)
 		else:
