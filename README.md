@@ -15,7 +15,7 @@
 
 <h3>Installation</h3>
 <p>
-To use the Savify Python module you will need your own Spotify developer application to access their API. </br>
+To use Convenify, you will need your own Spotify developer application to access their API. </br>
 To do this sign up here: https://developer.spotify.com</br>
 When you have made a new application take note of your client id and secret. Now you need to add 2 environment variables to your system:</br>
 <b>SPOTIPY_CLIENT_ID</br>
@@ -27,13 +27,15 @@ Additionally, for yt-dlp to work you need to install Deno, yt-dlp's default JS r
 
 <h3>Usage</h3>
 <p>
-On Windows, you just need to set your library path in config.json and start either script with the included .bat launchers. For update_library.bat, you also need to specify playlists to update in playlists.json.
+On Windows, you just need to set your library path in config.json (use double instead of single backslashes) and start either script with the included .bat launchers. For update_library.bat, you also need to specify playlists to update in playlists.json.
 </p>
 
 <h3>Known Issues</h3>
 <p>
   <b>There is one major issue that i wasn't able to fix yet:</b> </br>
-  After downloading ~50 tracks, Youtube starts rejecting all HTTP requests, returning 403: Forbidden. Presumably this is some kind of DDoS protection. I've tried multiple suggested fixes from the issue page of yt-dlp, but to this point none of them really worked. Any help you could provide to fix this would be massively appreciated. </br>
+  After downloading ~50 tracks, Youtube starts rejecting HTTP requests, returning 403: Forbidden. Presumably this is some kind of DDoS protection. I've modified Savify to include long pauses between downloads and only retry downloading once, and that seems to have improved it a lot. Sill, i always run a download queue twice, to ensure everything has been downloaded successfully. Any help you might provide to further improve this would be appreciated. </br>
+  <b>There's currently no fully working version for Linux</b> </br>
+  I've started implementing pathlib to uncouple Convenify from Windows, but i'm not a Linux desktop user so if anyone wants to help out with that, feel free to contribute.</br>
   <b>And one issue that might not be fixable at all:</b> </br>
   In some cases, approximately 1% of downloaded tracks, Savify picks some random ass video to download audio from when it can't find the actual track. It will still label it as though it was the right track though, so you might only notice when loading it in your music player or DJ software. I don't think I can fix this, as it's an issue with Savify itself. A lot of the time when it happens, looking for the broken track on Youtube myself i can find and download it manually without issue. It doesn't happen often though, just make sure you have the right track loaded before transitioning your DnB track into some random makeup tutorial.
 </p>
