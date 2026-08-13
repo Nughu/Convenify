@@ -27,7 +27,8 @@ def download(naem, dest, url):
 		f"-o \"{dest}\" "
         f"{url}"
 		)
-	subprocess.run(subcmd)
+	sub = subprocess.Popen(subcmd, shell=True)
+	sub.wait()
 	time.sleep(0.5)
 
 
