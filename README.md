@@ -10,6 +10,7 @@
   There are 2 scripts included, a manual downloader (download.py) and an automated library updater (update_library.py). The manual downloader takes a link (or a file containing multiple links) and sorts the downloaded tracks into a specific folder structure depending on whether it's a track, playlist or album. The updater takes an internal list of playlists, each entry consisting of name, path, link and genre of the playlist. When run, it iterates through these playlists, downloads any newly added tracks, puts them into the specified directory and then adds a genre tag to each downloaded file, making it especially convenient for DJs who like to have all music of a genre easily accessible in one place. </br> 
   The first version of this used the .exe release of Savify, and the basic mechanism is still based on that principle: </br>
   Convenify takes a Spotify link, looks into the URL, and then builds a custom command to launch Savify with certain parameters. Savify takes the metadata from Spotify, searches for the track on youtube, and then downloads it in the highest quality available using yt-dlp. </br>
+  If the manual downloader is provided with a .txt file (you can also just type "q" to make it use download-queue.txt), it iterates through all links in the file. After it has processed all of them, you'll be shown a report listing the successful downloads and the songs that failed along with their line in the text file and error message. </br>
   You can edit config.json and playlists.json to fit your local archive, specifying locations, Savify parameters and your own playlists to be synced by update_library.py. </br> </br>
 </p>
 
@@ -33,7 +34,7 @@ On Windows, you just need to set your library path in config.json (use double in
 <h3>Known Issues</h3>
 <p>
   <b>One major issue that i wasn't able to fix yet:</b> </br>
-  After downloading ~50 tracks, Youtube starts rejecting HTTP requests, returning 403: Forbidden. Presumably this is some kind of DDoS protection. I've modified Savify to include long pauses between downloads and only retry downloading once, and that seems to have improved it a lot. Sill, i always run a download queue twice, to ensure everything has been downloaded successfully. Any help you might provide to further improve this would be appreciated. </br>
+  After downloading ~50 tracks, Youtube starts rejecting HTTP requests, returning 403: Forbidden. Presumably this is some kind of DDoS protection. I've modified Savify to include long pauses between downloads and only retry downloading once, and that seems to have improved it a lot. I've introduces a final batch report so you can easily tell what to remove from the queue. </br>
   <b>There's currently no fully working version for Linux</b> </br>
   I've started implementing pathlib to uncouple Convenify from Windows, but i'm not a Linux desktop user so if anyone wants to help out with that, feel free to contribute.</br>
   <b>And one issue that might not be fixable at all:</b> </br>
