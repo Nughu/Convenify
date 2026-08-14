@@ -65,9 +65,9 @@ def print_batch_summary(results):
         failed_tracks = item["result"].get("failed_tracks", [])
 
         if file_line_number is not None:
-            location_label = f"{Fore.RESET}Link {Fore.YELLOW}{link_number:>2}{Fore.RESET}  (line {Fore.YELLOW}{file_line_number:>2}{Fore.RESET})"
+            location_label = f"{Fore.RESET}Link {link_number:>2}  (line {Fore.YELLOW}{file_line_number:>2}{Fore.RESET})"
         else:
-            location_label = f"{Fore.RESET}Link {Fore.YELLOW}{link_number:>2}{Fore.RESET}"
+            location_label = f"{Fore.RESET}Link {link_number:>2}"
 
         if not failed_tracks:
             print(f"{location_label:<26}: {Fore.GREEN}OK")
