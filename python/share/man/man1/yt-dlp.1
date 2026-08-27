@@ -1553,7 +1553,7 @@ The different file types supported are \f[V]subtitle\f[R],
 \f[V]pl_thumbnail\f[R], \f[V]pl_description\f[R], \f[V]pl_infojson\f[R],
 \f[V]chapter\f[R], \f[V]pl_video\f[R].
 E.g.
-\f[V]-o \[dq]%(title)s.%(ext)s\[dq] -o \[dq]thumbnail:%(title)s\[rs]%(title)s.%(ext)s\[dq]\f[R]
+\f[V]-o \[dq]%(title)s.%(ext)s\[dq] -o \[dq]thumbnail:%(title)s/%(title)s.%(ext)s\[dq]\f[R]
 will put the thumbnails in a folder with the same name as the video.
 If any of the templates is empty, that type of file will not be written.
 E.g.
@@ -2212,8 +2212,8 @@ Formats for which the value is not known are excluded unless you put a
 question mark (\f[V]?\f[R]) after the operator.
 You can combine format filters, so
 \f[V]-f \[dq]bv[height<=?720][tbr>500]\[dq]\f[R] selects up to 720p
-videos (or videos where the height is not known) with a bitrate of at
-least 500 kbps.
+videos (or videos where the height is not known) with a bitrate greater
+than 500 kbps.
 You can also use the filters with \f[V]all\f[R] to download all formats
 that satisfy the filter, e.g.
 \f[V]-f \[dq]all[vcodec=none]\[dq]\f[R] selects all audio-only formats.
@@ -2713,20 +2713,23 @@ respectively
 \f[V]player_client\f[R]: Clients to extract video data from.
 The currently available clients are \f[V]web\f[R], \f[V]web_safari\f[R],
 \f[V]web_embedded\f[R], \f[V]web_music\f[R], \f[V]web_creator\f[R],
-\f[V]mweb\f[R], \f[V]ios\f[R], \f[V]android\f[R], \f[V]android_vr\f[R],
-\f[V]tv\f[R], \f[V]tv_downgraded\f[R], and \f[V]tv_simply\f[R].
-By default, \f[V]android_vr,web_safari\f[R] is used.
-If no JavaScript runtime/engine is available, then only
-\f[V]android_vr\f[R] is used.
+\f[V]mweb\f[R], \f[V]ios\f[R], \f[V]visionos\f[R], \f[V]android\f[R],
+\f[V]android_vr\f[R], \f[V]tv\f[R], \f[V]tv_downgraded\f[R], and
+\f[V]tv_simply\f[R].
+By default, \f[V]visionos,web\f[R] is used.
+If no JavaScript runtime/engine is available, then \f[V]web\f[R] is
+omitted.
 If logged-in cookies are passed to yt-dlp, then
-\f[V]tv_downgraded,web_safari\f[R] is used for free accounts and
-\f[V]tv_downgraded,web_creator\f[R] is used for premium accounts.
+\f[V]web_embedded,tv_downgraded,web\f[R] is used for free accounts and
+\f[V]web_creator,tv_downgraded,web\f[R] is used for premium accounts.
 The \f[V]web_music\f[R] client is added for \f[V]music.youtube.com\f[R]
 URLs when logged-in cookies are used.
 The \f[V]web_embedded\f[R] client is added for age-restricted videos but
 only successfully works around the age-restriction sometimes (e.g.
-if the video is embeddable), and may be added as a fallback if
-\f[V]android_vr\f[R] is unable to access a video.
+if the video is embeddable).
+The \f[V]tv_downgraded\f[R] and \f[V]web_embedded\f[R] clients may be
+added as a fallback if \f[V]android_vr\f[R] or \f[V]visionos\f[R] is
+unable to access a video.
 The \f[V]web_creator\f[R] client is added for age-restricted videos if
 account age-verification is required.
 Some clients, such as \f[V]web_creator\f[R] and \f[V]web_music\f[R],
@@ -2737,7 +2740,7 @@ Not all clients support authentication via cookies.
 You can use \f[V]default\f[R] for the default clients, or you can use
 \f[V]all\f[R] for all clients (not recommended).
 You can prefix a client with \f[V]-\f[R] to exclude it, e.g.
-\f[V]youtube:player_client=default,-web_safari\f[R]
+\f[V]youtube:player_client=default,-web\f[R]
 .IP \[bu] 2
 \f[V]player_skip\f[R]: Skip some network requests that are generally
 needed for robust extraction.
@@ -2759,7 +2762,7 @@ value other than \f[V]actual\f[R] is used, then
 \f[V]webpage_skip=player_response\f[R] is implied
 .IP \[bu] 2
 \f[V]webpage_client\f[R]: Client to use for the video webpage request.
-One of \f[V]web\f[R] or \f[V]web_safari\f[R] (default)
+One of \f[V]web\f[R] (default) or \f[V]web_safari\f[R]
 .IP \[bu] 2
 \f[V]player_params\f[R]: YouTube player parameters to use for player
 requests.
@@ -3086,15 +3089,12 @@ Default is \f[V]asc\f[R]
 .SS vimeo
 .IP \[bu] 2
 \f[V]client\f[R]: Client to extract video data from.
-The currently available clients are \f[V]android\f[R], \f[V]ios\f[R],
-\f[V]macos\f[R] and \f[V]web\f[R].
+The currently available clients are \f[V]android\f[R] and \f[V]web\f[R].
 Only one client can be used.
-The \f[V]macos\f[R] client is used by default, but the \f[V]web\f[R]
-client is used when logged-in.
-The \f[V]web\f[R] client only works with account cookies or login
-credentials.
-The \f[V]android\f[R] and \f[V]ios\f[R] clients only work with
-previously cached OAuth tokens
+The \f[V]web\f[R] client is used by default, and it only works with
+account cookies or login credentials.
+The \f[V]android\f[R] client only works with previously cached OAuth
+tokens
 .IP \[bu] 2
 \f[V]original_format_policy\f[R]: Policy for when to try extracting
 original formats.

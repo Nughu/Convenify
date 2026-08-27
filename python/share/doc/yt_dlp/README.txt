@@ -1,7 +1,7 @@
 [YT-DLP]
 
-[Release version] [Python Version] [PyPI] [[Discord]](# [License:
-Unlicense] [Commits]
+[Release version] [Python Version] [PyPI] [Discord] [License: Unlicense]
+[Commits]
 
 yt-dlp is a feature-rich command-line audio/video downloader with
 support for thousands of sites. The project is a fork of youtube-dl
@@ -168,14 +168,14 @@ contain code from other projects with different licenses.
 Most notably, the PyInstaller-bundled executables include GPLv3+
 licensed code, and as such the combined work is licensed under GPLv3+.
 
-The zipimport Unix executable (yt-dlp) contains ISC licensed code from
-meriyah and MIT licensed code from astring.
+The zipimport Unix executable (yt-dlp) and release tarball
+(yt-dlp.tar.gz) contain ISC licensed code from meriyah and MIT licensed
+code from astring.
 
 See THIRD_PARTY_LICENSES.txt for more details.
 
-The git repository, the source tarball (yt-dlp.tar.gz), the PyPI source
-distribution and the PyPI built distribution (wheel) only contain code
-licensed under the Unlicense.
+The git repository, the PyPI source distribution and the PyPI built
+distribution (wheel) only contain code licensed under the Unlicense.
 
 Note: The manpages, shell completion (autocomplete) files etc. are
 available inside the source tarball
@@ -1510,7 +1510,7 @@ the type of file followed by the template separated by a colon :. The
 different file types supported are subtitle, thumbnail, description,
 annotation (deprecated), infojson, link, pl_thumbnail, pl_description,
 pl_infojson, chapter, pl_video. E.g.
--o "%(title)s.%(ext)s" -o "thumbnail:%(title)s\%(title)s.%(ext)s" will
+-o "%(title)s.%(ext)s" -o "thumbnail:%(title)s/%(title)s.%(ext)s" will
 put the thumbnails in a folder with the same name as the video. If any
 of the templates is empty, that type of file will not be written. E.g.
 --write-thumbnail -o "thumbnail:" will write thumbnails only for
@@ -1956,7 +1956,7 @@ filtering.
 Formats for which the value is not known are excluded unless you put a
 question mark (?) after the operator. You can combine format filters, so
 -f "bv[height<=?720][tbr>500]" selects up to 720p videos (or videos
-where the height is not known) with a bitrate of at least 500 kbps. You
+where the height is not known) with a bitrate greater than 500 kbps. You
 can also use the filters with all to download all formats that satisfy
 the filter, e.g. -f "all[vcodec=none]" selects all audio-only formats.
 
@@ -2316,25 +2316,26 @@ youtube
     respectively
 -   player_client: Clients to extract video data from. The currently
     available clients are web, web_safari, web_embedded, web_music,
-    web_creator, mweb, ios, android, android_vr, tv, tv_downgraded, and
-    tv_simply. By default, android_vr,web_safari is used. If no
-    JavaScript runtime/engine is available, then only android_vr is
-    used. If logged-in cookies are passed to yt-dlp, then
-    tv_downgraded,web_safari is used for free accounts and
-    tv_downgraded,web_creator is used for premium accounts. The
+    web_creator, mweb, ios, visionos, android, android_vr, tv,
+    tv_downgraded, and tv_simply. By default, visionos,web is used. If
+    no JavaScript runtime/engine is available, then web is omitted. If
+    logged-in cookies are passed to yt-dlp, then
+    web_embedded,tv_downgraded,web is used for free accounts and
+    web_creator,tv_downgraded,web is used for premium accounts. The
     web_music client is added for music.youtube.com URLs when logged-in
     cookies are used. The web_embedded client is added for
     age-restricted videos but only successfully works around the
-    age-restriction sometimes (e.g. if the video is embeddable), and may
-    be added as a fallback if android_vr is unable to access a video.
-    The web_creator client is added for age-restricted videos if account
+    age-restriction sometimes (e.g. if the video is embeddable). The
+    tv_downgraded and web_embedded clients may be added as a fallback if
+    android_vr or visionos is unable to access a video. The web_creator
+    client is added for age-restricted videos if account
     age-verification is required. Some clients, such as web_creator and
     web_music, require a po_token for their formats to be downloadable.
     Some clients, such as web_creator, will only work with
     authentication. Not all clients support authentication via cookies.
     You can use default for the default clients, or you can use all for
     all clients (not recommended). You can prefix a client with - to
-    exclude it, e.g. youtube:player_client=default,-web_safari
+    exclude it, e.g. youtube:player_client=default,-web
 -   player_skip: Skip some network requests that are generally needed
     for robust extraction. One or more of configs (skip client configs),
     webpage (skip initial webpage), js (skip js player), initial_data
@@ -2348,7 +2349,7 @@ youtube
     default; however, if a player_js_version value other than actual is
     used, then webpage_skip=player_response is implied
 -   webpage_client: Client to use for the video webpage request. One of
-    web or web_safari (default)
+    web (default) or web_safari
 -   player_params: YouTube player parameters to use for player requests.
     Will overwrite any default ones set by yt-dlp.
 -   player_js_variant: The player javascript variant to use for n/sig
@@ -2606,11 +2607,10 @@ tver
 vimeo
 
 -   client: Client to extract video data from. The currently available
-    clients are android, ios, macos and web. Only one client can be
-    used. The macos client is used by default, but the web client is
-    used when logged-in. The web client only works with account cookies
-    or login credentials. The android and ios clients only work with
-    previously cached OAuth tokens
+    clients are android and web. Only one client can be used. The web
+    client is used by default, and it only works with account cookies or
+    login credentials. The android client only works with previously
+    cached OAuth tokens
 -   original_format_policy: Policy for when to try extracting original
     formats. One of always, never, or auto. The default auto policy
     tries to avoid exceeding the web client's API rate-limit by only
