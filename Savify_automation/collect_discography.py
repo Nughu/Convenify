@@ -47,6 +47,14 @@ class SpotifyError(RuntimeError):
     pass
 
 
+def clear_console():
+    if os.name == "nt":
+        subprocess.run(["cmd", "/c", "cls"], check=False, shell=False)
+    elif os.name == "posix":
+        subprocess.run(["clear"], check=False)
+    else:
+        print("\n" * 50)
+
 def _safe_filename(name: str) -> str:
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", name)
     name = re.sub(r"\s+", " ", name).strip()
@@ -512,7 +520,7 @@ def main(argv: list[str] | None = None) -> int:
         artist = args.artist
         while True:
             if not artist:
-                artist = input("Spotify artist URL or artist ID: ").strip()
+                artist = input("Spotify artist URL or artist ID: \n").strip()
 
             output_path = extract_discography(
                 artist,
@@ -541,8 +549,9 @@ def main(argv: list[str] | None = None) -> int:
                         f"Post-processing script exited with code {completed.returncode}."
                     )
 
-            print("Press Enter to continue")
+            print("\nPress Enter to continue.")
             input()
+            clear_console()
             artist = input("Spotify artist URL or artist ID: ").strip()
 
     except (SpotifyError, ValueError) as exc:
