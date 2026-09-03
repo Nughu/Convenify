@@ -61,12 +61,17 @@ def _safe_filename(name: str) -> str:
     return name or "Spotify Discography"
 
 
-def build_queue_block(artist_name: str, links: list[str]) -> str:
-    """Return a queue section with an empty line, a hashtagged artist header and URLs."""
+def build_queue_block(
+    artist_name: str,
+    links: list[str],
+    *,
+    leading_newline: bool = True,
+) -> str:
+    """Return a hashtagged artist header and URLs with a trailing blank line."""
     artist_label = str(artist_name).strip() or "Unknown Artist"
     cleaned_links = [str(link).strip() for link in links if str(link).strip()]
 
-    block = ["", f"# {artist_label}"]
+    block = ([""] if leading_newline else []) + [f"# {artist_label}"]
     block.extend(cleaned_links)
     return "\n".join(block) + ("\n" if cleaned_links else "\n")
 
@@ -83,7 +88,11 @@ def append_to_queue_file(queue_file: str | Path, artist_name: str, links: list[s
     if existing and not existing.endswith("\n"):
         existing += "\n"
 
-    queue_path.write_text(existing + build_queue_block(artist_name, links), encoding="utf-8")
+    queue_path.write_text(
+        existing
+        + build_queue_block(artist_name, links, leading_newline=bool(existing)),
+        encoding="utf-8",
+    )
     return queue_path
 
 
