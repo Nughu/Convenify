@@ -1,4 +1,5 @@
 import logging
+import sys
 import traceback
 from .utils import create_dir
 from datetime import datetime
@@ -17,12 +18,18 @@ class Logger:
         create_dir(Path(log_location).parent)
 
         if log_level is not None:
+            stream = getattr(sys, 'stderr', None)
+            if stream is not None and hasattr(stream, 'reconfigure'):
+                try:
+                    stream.reconfigure(encoding='utf-8', errors='backslashreplace')
+                except (AttributeError, OSError, ValueError):
+                    pass
             stream_handler = logging.StreamHandler()
             stream_handler.setLevel(log_level)
             stream_handler.setFormatter(formatter)
             self.logger.addHandler(stream_handler)
 
-        file_handler = logging.FileHandler(log_location)
+        file_handler = logging.FileHandler(log_location, encoding='utf-8')
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(formatter)
         self.logger.addHandler(file_handler)
@@ -32,13 +39,13 @@ class Logger:
         self.logger.error(traceback.format_exc())
 
     def debug(self, message):
-        self.logger.debug(message.encode('utf8').decode('utf8'))
+        self.logger.debug(message)
 
     def warning(self, message):
-        self.logger.warning(message.encode('utf8').decode('utf8'))
+        self.logger.warning(message)
 
     def error(self, message):
-        self.logger.error(message.encode('utf8').decode('utf8'))
+        self.logger.error(message)
 
     def info(self, message):
-        self.logger.info(message.encode('utf8').decode('utf8'))
+        self.logger.info(message)
