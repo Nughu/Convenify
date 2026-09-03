@@ -4,7 +4,6 @@ import subprocess
 import time
 from colorama import init, Fore
 import music_tag
-import os
 
 init(autoreset=True)
 
@@ -32,14 +31,12 @@ def download(naem, dest, url):
 	time.sleep(0.5)
 
 
-def tag_genre(dest, genre):
+def tag_genre(files, genre):
 	print(Fore.LIGHTBLUE_EX + "setting tags...")
-	for filename in os.listdir(dest):
-		if filename[-4:] == ".mp3":
-			pth = os.path.join(dest, filename)
-			metadata = music_tag.load_file(pth)
-			metadata["genre"] = str(genre)
-			metadata.save()
+	for pth in files:
+		metadata = music_tag.load_file(pth)
+		metadata["genre"] = str(genre)
+		metadata.save()
 	print(Fore.GREEN + "...tags set.")
 	
 
@@ -50,9 +47,22 @@ for x in spotify_playlists:
 			playlist_path = LIBRARY_PATH / spotify_playlists[x]["path"]
 			if not playlist_path.exists():
 				playlist_path.mkdir(parents=True, exist_ok=True)
+			existing_files = {
+				path.resolve()
+				for path in playlist_path.iterdir()
+				if path.is_file() and path.suffix.lower() == ".mp3"
+			}
 			download(naem=x, dest=playlist_path, url=spotify_playlists[x]["link"])
 			if spotify_playlists[x]["genre"] != "":
-				tag_genre(dest=playlist_path, genre=spotify_playlists[x]["genre"])
+				new_files = [
+					path
+					for path in playlist_path.iterdir()
+					if path.is_file()
+					and path.suffix.lower() == ".mp3"
+					and path.resolve() not in existing_files
+				]
+				if new_files:
+					tag_genre(files=new_files, genre=spotify_playlists[x]["genre"])
 			print(Fore.GREEN + "\nDownload of " + Fore.YELLOW + str(x) + Fore.LIGHTBLUE_EX + " completed.\n\n")
 			time.sleep(3)
 		except Exception as e:
