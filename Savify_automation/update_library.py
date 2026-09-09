@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import subprocess
 import time
@@ -18,6 +19,15 @@ for subdir in ("Playlist", "Track", "Album"):
 
 spotify_playlists = json.loads(open(str(ROOT_DIR / "playlists.json")).read())
 	
+
+def clear_console():
+	if os.name == "nt":
+		subprocess.run(["cmd", "/c", "cls"], check=False, shell=False)
+	elif os.name == "posix":
+		subprocess.run(["clear"], check=False)
+	else:
+		print("\n" * 50)
+
 
 def download(naem, dest, url):
 	print(Fore.LIGHTBLUE_EX + "Downloading " + Fore.YELLOW + naem + Fore.LIGHTBLUE_EX + "...")
@@ -65,6 +75,7 @@ for x in spotify_playlists:
 					tag_genre(files=new_files, genre=spotify_playlists[x]["genre"])
 			print(Fore.GREEN + "\nDownload of " + Fore.YELLOW + str(x) + Fore.LIGHTBLUE_EX + " completed.\n\n")
 			time.sleep(3)
+			clear_console()
 		except Exception as e:
 			print(Fore.RED + f"\n\n############################\n\n{e}\n\n############################\n\n\n")
 

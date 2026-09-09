@@ -49,8 +49,9 @@ def get_choice() -> str:
     return input('[INPUT]\tEnter choice: ').lower()
 
 
-def show_banner() -> None:
-    click.clear()
+def show_banner(clear: bool = True) -> None:
+    if clear:
+        click.clear()
     click.echo(BANNER)
 
 
@@ -174,7 +175,7 @@ def guided_cli(type, quality, format, output, group, path, m3u, artist_albums, s
 @click.pass_context
 def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, verbose, silent, query, skip_cover_art):
     if not silent:
-        show_banner()
+        show_banner(clear=query is None)
         log_level = convert_log_level(verbose)
     else:
         log_level = None
