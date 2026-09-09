@@ -169,13 +169,14 @@ def guided_cli(type, quality, format, output, group, path, m3u, artist_albums, s
 @click.option('-a', '--artist-albums', is_flag=True, help='Download all artist songs and albums'
                                                           ', not just top 10 songs.')
 @click.option('--skip-cover-art', is_flag=True, help='Don\'t add cover art to downloaded song(s).')
+@click.option('--clear-console', is_flag=True, help='Clear the console before displaying the banner.')
 @click.option('--silent', is_flag=True, help='Hide all output to stdout, overrides verbosity level.')
 @click.option('-v', '--verbose', count=True, help='Change the log verbosity level. [-v, -vv]')
 @click.argument('query', required=False)
 @click.pass_context
-def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, verbose, silent, query, skip_cover_art):
+def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, verbose, silent, query, skip_cover_art, clear_console):
     if not silent:
-        show_banner(clear=query is None)
+        show_banner(clear=query is None or clear_console)
         log_level = convert_log_level(verbose)
     else:
         log_level = None

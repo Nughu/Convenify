@@ -120,6 +120,7 @@ def download(url, show_output=True):
 		subcmd = str(
 			f"\"{PYTHON_PATH}\" -m savify "
 			f"-o \"{LIBRARY_PATH / 'Playlist'}\" "
+			f"--clear-console "
 			f"{playlist_args} "
 			f"{url}"
 			)
@@ -145,6 +146,7 @@ def download(url, show_output=True):
 		subcmd = (
 			f"\"{PYTHON_PATH}\" -m savify "
 			f"-o \"{LIBRARY_PATH / 'Track'}\" "
+			f"--clear-console "
 			f"{track_args} "
 			f"{url}"
 			)
@@ -169,6 +171,7 @@ def download(url, show_output=True):
 		subcmd = str(
 			f"\"{PYTHON_PATH}\" -m savify "
 			f"-o \"{LIBRARY_PATH / 'Album'}\" "
+			f"--clear-console "
 			f"{album_args} "
 			f"{url}"
 			)
