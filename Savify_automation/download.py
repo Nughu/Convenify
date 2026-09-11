@@ -181,6 +181,8 @@ def run_savify_command(subcmd, show_output=True):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+		encoding="utf-8",
+		errors="replace",
         bufsize=1,
     )
 
@@ -247,14 +249,23 @@ def main():
 			if userinput.lower() == "queue" or userinput.lower() == "q":
 				userinput = "download-queue.txt"
 			if userinput[-4:] == ".txt":
-				with open(userinput) as file:
+				with open(userinput, encoding="utf-8", errors="replace") as file:
 					valid_links = _parse_queue_lines(file.readlines())
 					batch_results = []
 					for processed_count, (line_number, y, genre) in enumerate(valid_links, start=1):
 						clear_console()
 						print(f"{Fore.LIGHTBLUE_EX}Downloading from {userinput}...{Fore.RESET}\n{Fore.YELLOW}{str(processed_count)} / {str(len(valid_links))}{Fore.RESET}")
 						sleep(1)
-						result = download(y, genre=genre, show_output=True)
+						try:
+							result = download(y, genre=genre, show_output=True)
+						except Exception as error:
+							print(Fore.RED + f"Download failed unexpectedly: {error}")
+							result = {
+								"url": y,
+								"type": "Unknown",
+								"returncode": 1,
+								"failed_tracks": [{"song": y, "reason": str(error)}],
+							}
 						batch_results.append({"link_number": processed_count, "file_line_number": line_number, "url": y, "result": result})
 					clear_console()
 					print_batch_summary(batch_results)
