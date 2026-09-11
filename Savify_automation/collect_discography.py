@@ -561,7 +561,7 @@ def main(argv: list[str] | None = None) -> int:
             print("\nPress Enter to continue.")
             input()
             clear_console()
-            artist = input("Spotify artist URL or artist ID: ").strip()
+            artist = input("Spotify artist URL or artist ID: \n").strip()
 
     except (SpotifyError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
