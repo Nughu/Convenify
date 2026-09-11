@@ -32,6 +32,18 @@ Additionally, for yt-dlp to work you need to install Deno, yt-dlp's default JS r
 On Windows, you just need to set your library path in config.json (use double instead of single backslashes) and start either script with the included .bat launchers. For update_library.bat, you also need to specify playlists to update in playlists.json.
 </p>
 
+<h4>Genre tagging with download.py</h4>
+<p>
+  The manual downloader can tag only the MP3 files created by each download. For a pasted link, append an argument such as <code>genre:"Drum and Bass"</code>. In a queue file, an argument-only line applies to the consecutive links below it until a blank line or comment; an argument appended to an individual link overrides the block, including with <code>genre:""</code> to skip tagging that link.
+</p>
+<pre>
+genre:"Drum and Bass"
+https://open.spotify.com/track/example
+https://open.spotify.com/album/example genre:"Liquid"
+
+https://open.spotify.com/track/example genre:""
+</pre>
+
 <h3>Known Issues</h3>
 <p>
   <b>One major issue that i wasn't able to fix yet:</b> </br>

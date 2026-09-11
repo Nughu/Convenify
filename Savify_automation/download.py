@@ -1,9 +1,11 @@
 import subprocess
 import os
 import json
+import re
 from time import sleep
 from colorama import Fore, Style, init
 from pathlib import Path
+import music_tag
 
 init(autoreset=True)
 
@@ -20,6 +22,9 @@ for subdir in ("Playlist", "Track", "Album"):
 track_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["track_args"]
 album_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["album_args"]
 playlist_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["playlist_args"]
+
+GENRE_PATTERN = re.compile(r'genre:"([^"]*)"')
+SPOTIFY_URL_PATTERN = re.compile(r'https?://open\.spotify\.com/\S+')
 
 
 def clear_console():
@@ -50,6 +55,92 @@ def _parse_failed_tracks(output):
                 })
                 current_song = None
     return failed
+
+
+def _extract_genre(value):
+
+	match = GENRE_PATTERN.search(value)
+	if not match:
+		return "", value.strip(), ""
+	return match.group(1), value[:match.start()].strip(), value[match.end():].strip()
+
+
+def _parse_queue_lines(lines):
+	parsed = []
+	block_genre = None
+	for line_number, raw_line in enumerate(lines, start=1):
+		line = raw_line.strip()
+		if not line or line.startswith("#"):
+			block_genre = None
+			continue
+
+		genre_match = GENRE_PATTERN.fullmatch(line)
+		if genre_match:
+			block_genre = genre_match.group(1)
+			continue
+
+		genre_match = GENRE_PATTERN.search(line)
+		genre, before_genre, after_genre = _extract_genre(line)
+		url_match = SPOTIFY_URL_PATTERN.search(line)
+		if not url_match:
+			continue
+
+		url = url_match.group(0).replace("intl-de/", "")
+		line_genre = genre if genre_match and before_genre and not after_genre else block_genre
+		parsed.append((line_number, url, line_genre or ""))
+	return parsed
+
+
+def tag_genre(files, genre):
+	if not genre:
+		return
+	print(Fore.LIGHTBLUE_EX + "setting tags...")
+	for path in files:
+		metadata = music_tag.load_file(path)
+		metadata["genre"] = str(genre)
+		metadata.save()
+	print(Fore.GREEN + "...tags set.")
+
+
+def _new_mp3_files(destination, existing_files):
+	return [
+		path
+		for path in destination.iterdir()
+		if path.is_file()
+		and path.suffix.lower() == ".mp3"
+		and path.resolve() not in existing_files
+	]
+
+
+def _download_to_destination(url, destination, savify_args, genre, download_type, show_output):
+	existing_files = {
+		path.resolve()
+		for path in destination.iterdir()
+		if path.is_file() and path.suffix.lower() == ".mp3"
+	}
+	subcmd = (
+		f'"{PYTHON_PATH}" -m savify '
+		f'-o "{destination}" '
+		f'--clear-console '
+		f'{savify_args} '
+		f'{url}'
+	)
+	returncode, result_output = run_savify_command(subcmd, show_output=show_output)
+	failed_tracks = _parse_failed_tracks(result_output)
+	new_files = _new_mp3_files(destination, existing_files)
+	if genre:
+		tag_genre(new_files, genre)
+	result = {
+		"url": url,
+		"type": download_type,
+		"returncode": returncode,
+		"failed_tracks": failed_tracks,
+	}
+	if not failed_tracks:
+		print(Fore.GREEN + "Download completed.")
+	else:
+		print(Fore.RED + f"Download finished with {len(failed_tracks)} failed track(s).")
+	return result
 
 
 def print_batch_summary(results):
@@ -112,83 +203,22 @@ def run_savify_command(subcmd, show_output=True):
     return process.wait(), "\n".join(combined_output).strip()
 
 
-def download(url, show_output=True):
+def download(url, genre="", show_output=True):
 
 	# Playlist
 	if (url[25:33]) == "playlist":
 		Type = "Playlist"
-		subcmd = str(
-			f"\"{PYTHON_PATH}\" -m savify "
-			f"-o \"{LIBRARY_PATH / 'Playlist'}\" "
-			f"--clear-console "
-			f"{playlist_args} "
-			f"{url}"
-			)
-		
-		returncode, result_output = run_savify_command(subcmd, show_output=show_output)
-		failed_tracks = _parse_failed_tracks(result_output)
-		result = {
-			"url": url,
-			"type": Type,
-			"returncode": returncode,
-			"failed_tracks": failed_tracks,
-		}
-		if not failed_tracks:
-			print(Fore.GREEN + "Download completed.")
-		else:
-			print(Fore.RED + f"Download finished with {len(failed_tracks)} failed track(s).")
-		return result
+		return _download_to_destination(url, LIBRARY_PATH / Type, playlist_args, genre, Type, show_output)
 
 	# Track
 	if (url[25:30]) == "track":
 		Type = "Track"
-		
-		subcmd = (
-			f"\"{PYTHON_PATH}\" -m savify "
-			f"-o \"{LIBRARY_PATH / 'Track'}\" "
-			f"--clear-console "
-			f"{track_args} "
-			f"{url}"
-			)
-		
-		returncode, result_output = run_savify_command(subcmd, show_output=show_output)
-		failed_tracks = _parse_failed_tracks(result_output)
-		result = {
-			"url": url,
-			"type": Type,
-			"returncode": returncode,
-			"failed_tracks": failed_tracks,
-		}
-		if not failed_tracks:
-			print(Fore.GREEN + "Download completed.")
-		else:
-			print(Fore.RED + f"Download finished with {len(failed_tracks)} failed track(s).")
-		return result
+		return _download_to_destination(url, LIBRARY_PATH / Type, track_args, genre, Type, show_output)
 
 	# Album
 	if (url[25:30]) == "album":
 		Type = "Album"
-		subcmd = str(
-			f"\"{PYTHON_PATH}\" -m savify "
-			f"-o \"{LIBRARY_PATH / 'Album'}\" "
-			f"--clear-console "
-			f"{album_args} "
-			f"{url}"
-			)
-		
-		returncode, result_output = run_savify_command(subcmd, show_output=show_output)
-		failed_tracks = _parse_failed_tracks(result_output)
-		result = {
-			"url": url,
-			"type": Type,
-			"returncode": returncode,
-			"failed_tracks": failed_tracks,
-		}
-		if not failed_tracks:
-			print(Fore.GREEN + "Download completed.")
-		else:
-			print(Fore.RED + f"Download finished with {len(failed_tracks)} failed track(s).")
-		return result
+		return _download_to_destination(url, LIBRARY_PATH / Type, album_args, genre, Type, show_output)
 
 	# Neither
 	if (url[25:33]) != "playlist" and (url[25:30]) != "track" and (url[25:30]) != "album":
@@ -219,37 +249,38 @@ def download(url, show_output=True):
 		return {"url": url, "type": Type, "returncode": 1, "failed_tracks": [{"song": url, "reason": "Download aborted by user."}]}
 
 
-# Main loop
-while True:
-	try:
-		print(f"{Fore.LIGHTBLUE_EX}Enter Spotify link (or .txt file containing multiple links).{Fore.RESET}")
-		userinput = ((input(Fore.RESET + "")).replace("intl-de/", ""))
-		if userinput.lower() == "queue" or userinput.lower() == "q":
-			userinput = "download-queue.txt"
-		if userinput[-4:] == ".txt":
-			with open(userinput) as file:
-				read = file.readlines()
-				valid_links = []
-				for line_number, x in enumerate(read, start=1):
-					y = x.replace("\n", "").replace(" ", "").replace("intl-de/", "")
-					if y != "" and not y.startswith("#"):
-						valid_links.append((line_number, y))
-				batch_results = []
-				for processed_count, (line_number, y) in enumerate(valid_links, start=1):
+def main():
+	while True:
+		try:
+			print(f"{Fore.LIGHTBLUE_EX}Enter Spotify link (or .txt file containing multiple links).{Fore.RESET}")
+			userinput = input(Fore.RESET + "")
+			if userinput.lower() == "queue" or userinput.lower() == "q":
+				userinput = "download-queue.txt"
+			if userinput[-4:] == ".txt":
+				with open(userinput) as file:
+					valid_links = _parse_queue_lines(file.readlines())
+					batch_results = []
+					for processed_count, (line_number, y, genre) in enumerate(valid_links, start=1):
+						clear_console()
+						print(f"{Fore.LIGHTBLUE_EX}Downloading from {userinput}...{Fore.RESET}\n{Fore.YELLOW}{str(processed_count)} / {str(len(valid_links))}{Fore.RESET}")
+						sleep(1)
+						result = download(y, genre=genre, show_output=True)
+						batch_results.append({"link_number": processed_count, "file_line_number": line_number, "url": y, "result": result})
 					clear_console()
-					print(f"{Fore.LIGHTBLUE_EX}Downloading from {userinput}...{Fore.RESET}\n{Fore.YELLOW}{str(processed_count)} / {str(len(valid_links))}{Fore.RESET}")
-					sleep(1)
-					result = download(y, show_output=True)
-					batch_results.append({"link_number": processed_count, "file_line_number": line_number, "url": y, "result": result})
-				clear_console()
-				print_batch_summary(batch_results)
-		elif userinput[13:20] == "spotify":
-			download(userinput)
-		else:
-			print(Fore.RED + "\n############################\nNOT UNDERSTOOD!\n############################\n")
-		sleep(1)
-		input(Fore.LIGHTBLUE_EX + "\nPress Enter to continue...")
-		clear_console()
-	except Exception as e:
-		print(Fore.RED + f"\n\n############################\n\n{e}\n\n############################\n\n")
-		input(Fore.LIGHTBLUE_EX + "Press Enter to continue...")
+					print_batch_summary(batch_results)
+			else:
+				genre, url, trailing_text = _extract_genre(userinput.replace("intl-de/", ""))
+				if url[13:20] == "spotify" and not trailing_text:
+					download(url, genre=genre)
+				else:
+					print(Fore.RED + "\n############################\nNOT UNDERSTOOD!\n############################\n")
+			sleep(1)
+			input(Fore.LIGHTBLUE_EX + "\nPress Enter to continue...")
+			clear_console()
+		except Exception as e:
+			print(Fore.RED + f"\n\n############################\n\n{e}\n\n############################\n\n")
+			input(Fore.LIGHTBLUE_EX + "Press Enter to continue...")
+
+
+if __name__ == "__main__":
+	main()
