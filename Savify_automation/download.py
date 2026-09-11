@@ -105,7 +105,7 @@ def tag_genre(files, genre):
 def _new_mp3_files(destination, existing_files):
 	return [
 		path
-		for path in destination.iterdir()
+		for path in destination.rglob("*")
 		if path.is_file()
 		and path.suffix.lower() == ".mp3"
 		and path.resolve() not in existing_files
@@ -113,9 +113,11 @@ def _new_mp3_files(destination, existing_files):
 
 
 def _download_to_destination(url, destination, savify_args, genre, download_type, show_output):
+	destination.mkdir(parents=True, exist_ok=True)
+	# Include nested album/artist folders in the before-download snapshot.
 	existing_files = {
 		path.resolve()
-		for path in destination.iterdir()
+		for path in destination.rglob("*")
 		if path.is_file() and path.suffix.lower() == ".mp3"
 	}
 	subcmd = (
@@ -230,19 +232,7 @@ def download(url, genre="", show_output=True):
 			conanyway = input(Fore.LIGHTBLUE_EX + "\ntry anyway? (Y/N)\n")
 		if conanyway in ["Y", "y", "Yes", "yes", "YES"]:
 			print((Fore.YELLOW + "\nType: ") + (Fore.LIGHTGREEN_EX + Type) + (Fore.LIGHTBLUE_EX + "\n\n\nlaunching Savify..."))
-			returncode, result_output = run_savify_command(subcmd, show_output=show_output)
-			failed_tracks = _parse_failed_tracks(result_output)
-			result = {
-				"url": url,
-				"type": Type,
-				"returncode": returncode,
-				"failed_tracks": failed_tracks,
-			}
-			if not failed_tracks:
-				print(Fore.GREEN + "Download completed.")
-			else:
-				print(Fore.RED + f"Download finished with {len(failed_tracks)} failed track(s).")
-			return result
+			return _download_to_destination(url, LIBRARY_PATH / Type, "", genre, Type, show_output)
 		if conanyway in ["N", "n", "No", "no", "NO"]:
 			print(Fore.RESET + Style.DIM + "Download aborted.")
 			Style.RESET()
