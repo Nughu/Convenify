@@ -531,41 +531,43 @@ def main(argv: list[str] | None = None) -> int:
             if not artist:
                 artist = input("Spotify artist URL or artist ID: \n").strip()
 
-            output_path = extract_discography(
-                artist,
-                market=args.market,
-                output_dir=args.output_dir,
-                output_file=args.output,
-                credentials_file=args.credentials,
-                verbose=True,
-                append_queue=args.append_queue,
-                queue_file=args.queue_file,
-            )
-
-            if args.after:
-                after_script = Path(args.after).expanduser().resolve()
-                if not after_script.exists():
-                    raise SpotifyError(f"Post-processing script not found: {after_script}")
-
-                print()
-                print(f"Running post-processing script: {after_script}")
-                completed = subprocess.run(
-                    [sys.executable, str(after_script), str(output_path)],
-                    check=False,
+            try:
+                output_path = extract_discography(
+                    artist,
+                    market=args.market,
+                    output_dir=args.output_dir,
+                    output_file=args.output,
+                    credentials_file=args.credentials,
+                    verbose=True,
+                    append_queue=args.append_queue,
+                    queue_file=args.queue_file,
                 )
-                if completed.returncode != 0:
-                    raise SpotifyError(
-                        f"Post-processing script exited with code {completed.returncode}."
+
+                if args.after:
+                    after_script = Path(args.after).expanduser().resolve()
+                    if not after_script.exists():
+                        raise SpotifyError(f"Post-processing script not found: {after_script}")
+
+                    print()
+                    print(f"Running post-processing script: {after_script}")
+                    completed = subprocess.run(
+                        [sys.executable, str(after_script), str(output_path)],
+                        check=False,
                     )
+                    if completed.returncode != 0:
+                        raise SpotifyError(
+                            f"Post-processing script exited with code {completed.returncode}."
+                        )
+            except (SpotifyError, ValueError) as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                artist = ""
+                continue
 
             print("\nPress Enter to continue.")
             input()
             clear_console()
             artist = input("Spotify artist URL or artist ID: \n").strip()
 
-    except (SpotifyError, ValueError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
     except KeyboardInterrupt:
         print("\nCancelled.", file=sys.stderr)
         return 130
