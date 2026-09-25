@@ -150,6 +150,7 @@ def print_batch_summary(results):
         print(Fore.YELLOW + "No links to summarize.")
         return
 
+    link_number_width = len(str(max(item["link_number"] for item in results)))
     print(f"\n{Fore.MAGENTA}======= Final batch download report ======={Fore.RESET}\n")
     for item in results:
         link_number = item["link_number"]
@@ -158,9 +159,9 @@ def print_batch_summary(results):
         failed_tracks = item["result"].get("failed_tracks", [])
 
         if file_line_number is not None:
-            location_label = f"{Fore.RESET}Link {link_number:>3}  (line {Fore.YELLOW}{file_line_number:>3}{Fore.RESET})"
+            location_label = f"{Fore.RESET}Link {link_number:>{link_number_width}}  (line {Fore.YELLOW}{file_line_number:>3}{Fore.RESET})"
         else:
-            location_label = f"{Fore.RESET}Link {link_number:>3}"
+            location_label = f"{Fore.RESET}Link {link_number:>{link_number_width}}"
 
         if not failed_tracks:
             print(f"{location_label:<26}: {Fore.GREEN}OK")
