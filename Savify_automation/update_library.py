@@ -6,12 +6,14 @@ import subprocess
 import time
 from colorama import init, Fore
 import music_tag
+from setup_check import ensure_requirements
 
 init(autoreset=True)
 
 # Variables
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parent
+ensure_requirements(ROOT_DIR)
 PYTHON_PATH = str(ROOT_DIR / "python" / "python.exe")
 SAVIFY_PATH = str(ROOT_DIR / "savify-new")
 LIBRARY_PATH = Path(json.loads(open(str(ROOT_DIR / "config.json")).read())["library_path"])

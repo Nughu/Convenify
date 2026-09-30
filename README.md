@@ -17,19 +17,14 @@
 
 <h3>Installation</h3>
 <p>
-To use Convenify, you will need your own Spotify developer application to access their API. </br>
-To do this sign up here: https://developer.spotify.com</br>
-When you have made a new application take note of your client id and secret. Now you need to add 2 environment variables to your system:</br>
-<b>SPOTIPY_CLIENT_ID</br>
-SPOTIPY_CLIENT_SECRET</b> </br>
-To find out how to do this find a tutorial online for your specific operating system. </br> </br>
-Additionally, for yt-dlp to work you need to install Deno, yt-dlp's default JS runtime. On Windows, you can just execute this command in cmd: </br>
-<b>winget install --id=DenoLand.Deno</b>
+To use Convenify, create a Spotify developer application at https://developer.spotify.com and note its client ID and client secret. If either downloader is started before setup is complete, it launches <code>Savify_automation/setup.ps1</code> and prompts for those values and your music library folder path. The script installs Deno using winget if it is not already installed, saves the Spotify credentials as user environment variables, and writes the library path to <code>config.json</code>. You can also run the PowerShell script directly. No administrator access is required.
+</br></br>
+Restart open terminals or VS Code windows after setup if it cannot detect the newly installed Deno executable.
 </p>
 
 <h3>Usage</h3>
 <p>
-On Windows, you just need to set your library path in config.json (use double instead of single backslashes) and start either script with the included .bat launchers. For update_library.bat, you also need to specify playlists to update in playlists.json.
+On Windows, start either script with the included .bat launchers. For update_library.bat, you also need to specify playlists to update in playlists.json.
 </p>
 
 <h4>Genre tagging with download.py</h4>

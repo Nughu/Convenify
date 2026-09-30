@@ -6,12 +6,14 @@ from time import sleep
 from colorama import Fore, Style, init
 from pathlib import Path
 import music_tag
+from setup_check import ensure_requirements
 
 init(autoreset=True)
 
 # Variables
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parent
+ensure_requirements(ROOT_DIR)
 PYTHON_PATH = str(ROOT_DIR / "python" / "python.exe")
 SAVIFY_PATH = str(ROOT_DIR / "savify-new")
 
