@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 from pathlib import Path
@@ -63,16 +64,21 @@ def ensure_requirements(root_dir):
 
 	print("Convenify setup is needed: " + ", ".join(missing))
 	setup_script = root_dir / "Savify_automation" / "setup.ps1"
+	setup_source = setup_script.read_text(encoding="utf-8-sig")
+	encoded_setup = base64.b64encode(setup_source.encode("utf-16le")).decode("ascii")
+	setup_environment = os.environ.copy()
+	setup_environment["CONVENIFY_ROOT_DIR"] = str(root_dir)
 	result = subprocess.run(
 		[
 			"powershell.exe",
 			"-NoProfile",
 			"-ExecutionPolicy",
 			"Bypass",
-			"-File",
-			str(setup_script),
+			"-EncodedCommand",
+			encoded_setup,
 		],
 		cwd=root_dir,
+		env=setup_environment,
 	)
 	if result.returncode != 0:
 		raise SystemExit("Convenify setup did not complete successfully.")

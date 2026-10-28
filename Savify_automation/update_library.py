@@ -3,9 +3,12 @@ import os
 import argparse
 from pathlib import Path
 import subprocess
+import sys
 import time
 from colorama import init, Fore
 import music_tag
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from setup_check import ensure_requirements
 
 init(autoreset=True)

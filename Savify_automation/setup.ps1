@@ -20,7 +20,10 @@ function Read-RequiredSecret {
 }
 
 Write-Host 'Convenify setup' -ForegroundColor Cyan
-$rootDir = Split-Path -Parent $PSScriptRoot
+$rootDir = $env:CONVENIFY_ROOT_DIR
+if ([string]::IsNullOrWhiteSpace($rootDir)) {
+    $rootDir = Split-Path -Parent $PSScriptRoot
+}
 $configPath = Join-Path $rootDir 'config.json'
 try {
     $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json

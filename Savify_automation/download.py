@@ -5,7 +5,10 @@ import re
 from time import sleep
 from colorama import Fore, Style, init
 from pathlib import Path
+import sys
 import music_tag
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from setup_check import ensure_requirements
 
 init(autoreset=True)
