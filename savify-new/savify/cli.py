@@ -10,6 +10,8 @@ from . import __version__, __author__
 from .types import *
 from .utils import PathHolder, create_dir
 from .savify import Savify
+from .youtube_matcher import MatchConfig
+from .ydl_options import parse_extra_options
 from .logger import Logger
 from .exceptions import FFmpegNotInstalledError, SpotifyApiCredentialsNotSetError, UrlNotSupportedError, \
     InternetConnectionError
@@ -29,7 +31,8 @@ BANNER = rf"""
 
 """
 
-system('title Convenify')
+if sys.platform == 'win32':
+    system('title Convenify')
 
 
 class Choices:
@@ -169,12 +172,25 @@ def guided_cli(type, quality, format, output, group, path, m3u, artist_albums, s
 @click.option('-a', '--artist-albums', is_flag=True, help='Download all artist songs and albums'
                                                           ', not just top 10 songs.')
 @click.option('--skip-cover-art', is_flag=True, help='Don\'t add cover art to downloaded song(s).')
+@click.option('--search-results', default=10, show_default=True, type=click.IntRange(1, 50),
+              help='Candidates to search before choosing a recording.')
+@click.option('--match-threshold', default=0.82, show_default=True, type=click.FloatRange(0, 1),
+              help='Minimum matching score; title, artist and duration checks still apply.')
+@click.option('--no-youtube-music', is_flag=True, help='Use validated regular YouTube searches only.')
+@click.option('--no-match-cache', is_flag=True, help='Ignore and do not update previously successful URL mappings.')
+@click.option('--match-overrides', type=click.Path(exists=True, dir_okay=False),
+              help='JSON mapping Spotify IDs/URIs to manually selected YouTube URLs or video IDs.')
+@click.option('--verify-existing', is_flag=True, help='Audit existing audio duration and source records.')
+@click.option('--redownload', is_flag=True, help='Replace existing files only after a new candidate passes validation.')
+@click.option('--workers', default=4, show_default=True, type=click.IntRange(1, 16),
+              help='Maximum concurrent tracks.')
 @click.option('--clear-console', is_flag=True, help='Clear the console before displaying the banner.')
 @click.option('--silent', is_flag=True, help='Hide all output to stdout, overrides verbosity level.')
 @click.option('-v', '--verbose', count=True, help='Change the log verbosity level. [-v, -vv]')
 @click.argument('query', required=False)
 @click.pass_context
-def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, verbose, silent, query, skip_cover_art, clear_console):
+def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, verbose, silent, query, skip_cover_art, clear_console,
+         search_results, match_threshold, no_youtube_music, no_match_cache, match_overrides, verify_existing, redownload, workers):
     if not silent:
         show_banner(clear=query is None or clear_console)
         log_level = convert_log_level(verbose)
@@ -192,11 +208,18 @@ def main(ctx, type, quality, format, output, group, path, m3u, artist_albums, ve
     query_type = convert_type(type)
     quality = convert_quality(quality)
     logger = Logger(path_holder.data_path, log_level)
-    ydl_options = {ctx.args[i][2:]: ctx.args[i+1] for i in range(0, len(ctx.args), 2)}
+    try:
+        ydl_options = parse_extra_options(ctx.args)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from exc
+    match_config = MatchConfig(search_results=search_results, min_score=match_threshold,
+                               use_youtube_music=not no_youtube_music, use_cache=not no_match_cache)
 
     def setup(ffmpeg='ffmpeg'):
         return Savify(quality=quality, download_format=output_format, path_holder=path_holder, group=group,
-                      skip_cover_art=skip_cover_art, logger=logger, ffmpeg_location=ffmpeg, ydl_options=ydl_options)
+                      skip_cover_art=skip_cover_art, logger=logger, ffmpeg_location=ffmpeg, ydl_options=ydl_options,
+                      match_config=match_config, match_overrides=match_overrides,
+                      verify_existing=verify_existing, redownload=redownload, workers=workers)
 
     def check_guided():
         if guided:
@@ -272,7 +295,7 @@ def convert_quality(quality: str) -> Quality:
         '256k': Quality.Q256K,
         '192k': Quality.Q192K,
         '128k': Quality.Q128K,
-        '98k': Quality.Q96K,
+        '96k': Quality.Q96K,
         '32k': Quality.Q32K,
         'worst': Quality.WORST,
     }

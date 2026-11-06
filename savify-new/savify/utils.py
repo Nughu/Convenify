@@ -28,10 +28,9 @@ def create_dir(path: Path) -> None:
 
 
 def check_ffmpeg() -> bool:
-    dir = Path(__file__).resolve().parent
-    return dir / "ffmpeg"
-    #from shutil import which
-    #return which('ffmpeg') is not None
+    from shutil import which
+    directory = Path(__file__).resolve().parent
+    return which('ffmpeg') is not None or any((directory / name).is_file() for name in ('ffmpeg', 'ffmpeg.exe'))
 
 
 def check_env() -> bool:

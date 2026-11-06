@@ -6,20 +6,27 @@ import traceback
 from multiprocessing import cpu_count
 from multiprocessing.dummy import Pool as ThreadPool
 from pathlib import Path
-from shutil import move, Error as ShutilError
+import json
+import os
+import threading
+from tempfile import TemporaryDirectory
+from dataclasses import asdict
+from uuid import uuid4
 from urllib.error import URLError
+from urllib.parse import urlparse
 
 import validators
-import tldextract
 import requests
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
-from ffmpy import FFmpeg, FFRuntimeError
 
-from .utils import PathHolder, safe_path_string, check_env, check_ffmpeg, check_file, create_dir, clean
+from .utils import PathHolder, safe_path_string, check_env, check_ffmpeg, check_file, create_dir
 from .types import *
 from .spotify import Spotify
 from .track import Track
+from .youtube_matcher import Match, MatchConfig, MatchStore, SearchProvider, YouTubeMatcher, NoReliableMatch, normalize
+from .media_validation import AudioValidationError, validate_audio, publish_audio
+from .ydl_options import normalize_options
 from .logger import Logger
 from .exceptions import FFmpegNotInstalledError, SpotifyApiCredentialsNotSetError, UrlNotSupportedError, \
     YoutubeDlExtractionError, InternetConnectionError
@@ -31,7 +38,7 @@ def _sort_dir(track: Track, group: str) -> str:
 
     group = group.replace('%artist%', safe_path_string(track.artists[0]))
     group = group.replace('%album%', safe_path_string(track.album_name))
-    group = group.replace('%playlist%', safe_path_string(track.playlist))
+    group = group.replace('%playlist%', safe_path_string(track.playlist or ''))
 
     return str(group)
 
@@ -49,20 +56,38 @@ class Savify:
     def __init__(self, api_credentials=None, quality=Quality.BEST, download_format=Format.MP3,
                  group=None, path_holder: PathHolder = None, retry: int = 1,
                  ydl_options: dict = None, skip_cover_art: bool = False, logger: Logger = None,
-                 ffmpeg_location: str = 'ffmpeg') -> None:
+                 ffmpeg_location: str = 'ffmpeg', match_config: MatchConfig = None,
+                 match_overrides=None, verify_existing=False, redownload=False,
+                 workers=None, audio_verifier=None) -> None:
 
         self.download_format = download_format
         self.ffmpeg_location = ffmpeg_location
+        if ffmpeg_location == 'ffmpeg':
+            for name in ('ffmpeg.exe', 'ffmpeg'):
+                bundled = Path(__file__).resolve().parent / name
+                if bundled.is_file():
+                    self.ffmpeg_location = str(bundled)
+                    break
+        self.verify_existing = verify_existing
+        self.redownload = redownload
+        self.workers = min(4, cpu_count()) if workers is None else workers
+        if self.workers < 1:
+            raise ValueError('workers must be a positive integer')
+        self.audio_verifier = audio_verifier
+        self._state_lock = threading.RLock()
+        self._output_locks = {}
         self.skip_cover_art = skip_cover_art
         self.downloaded_cover_art = dict()
         self.quality = quality
         self.queue_size = 0
         self.completed = 0
+        if retry < 0:
+            raise ValueError('retry cannot be negative')
         self.retry = retry
         self.group = group
 
         # Config or defaults...
-        self.ydl_options = ydl_options or dict()
+        self.ydl_options = normalize_options(ydl_options or {})
         self.path_holder = path_holder or PathHolder()
         self.logger = logger or Logger(self.path_holder.data_path)
 
@@ -77,7 +102,11 @@ class Savify:
         if not check_ffmpeg() and self.ffmpeg_location == 'ffmpeg':
             raise FFmpegNotInstalledError
 
-        clean(self.path_holder.get_temp_dir())
+        self.match_config = match_config or MatchConfig()
+        self.match_store = MatchStore(self.path_holder.data_path, self.logger, match_overrides)
+        self.matcher = YouTubeMatcher(
+            SearchProvider(self._transport_options(), self.logger, self.match_config),
+            self.match_store, self.logger, self.match_config, self.spotify.enrich_track)
         self.check_for_updates()
 
     def check_for_updates(self) -> None:
@@ -86,8 +115,9 @@ class Savify:
 
     def _parse_query(self, query, query_type=Type.TRACK, artist_albums: bool = False) -> list:
         result = list()
-        if validators.url(query) or query[:8] == 'spotify:':
-            if tldextract.extract(query).domain == Platform.SPOTIFY:
+        if validators.url(query) or query.startswith('spotify:'):
+            hostname = urlparse(query).hostname or ''
+            if query.startswith('spotify:') or hostname == 'spotify.com' or hostname.endswith('.spotify.com'):
                 result = self.spotify.link(query, artist_albums=artist_albums)
             else:
                 raise UrlNotSupportedError(query)
@@ -111,7 +141,7 @@ class Savify:
         try:
             queue = self._parse_query(query, query_type=query_type, artist_albums=artist_albums)
             self.queue_size += len(queue)
-        except requests.exceptions.ConnectionError or URLError:
+        except (requests.exceptions.ConnectionError, URLError):
             raise InternetConnectionError
 
         if not (len(queue) > 0):
@@ -120,7 +150,7 @@ class Savify:
 
         self.logger.info(f'Downloading {len(queue)} songs...')
         start_time = time.time()
-        with ThreadPool(cpu_count()) as pool:
+        with ThreadPool(self.workers) as pool:
             jobs = pool.map(self._download, queue)
 
         failed_jobs = list()
@@ -133,32 +163,30 @@ class Savify:
 
         if create_m3u and len(successful_jobs) > 0:
             track = successful_jobs[0]['track']
-            playlist = safe_path_string(track.playlist)
+            playlist = safe_path_string(track.playlist or '')
 
             if not playlist:
                 if query_type in {Type.EPISODE, Type.SHOW, Type.ALBUM}:
                     playlist = track.album_name
-                elif query_type is Type.ARTIST:
+                elif query_type == Type.ARTIST:
                     playlist = track.artists[0]
                 else:
                     playlist = track.name
 
+            playlist = safe_path_string(playlist)
             m3u = f'#EXTM3U\n#PLAYLIST:{playlist}\n'
             m3u_location = self.path_holder.get_download_dir() / f'{playlist}.m3u'
 
             for job in successful_jobs:
                 track = job['track']
                 location = job['location']
-                m3u += f'#EXTINF:{str(queue.index(track))},{str(track)}\n'
+                m3u += f'#EXTINF:{int(track.duration or -1)},{str(track)}\n'
                 from os.path import relpath
                 m3u += f'{relpath(location, m3u_location.parent)}\n'
 
             self.logger.info('Creating the M3U playlist file..')
-            with open(m3u_location, 'w') as m3u_file:
+            with open(m3u_location, 'w', encoding='utf-8') as m3u_file:
                 m3u_file.write(m3u)
-
-        self.logger.info('Cleaning up...')
-        clean(self.path_holder.get_temp_dir())
 
         message = f'Download Finished!\n\tCompleted {len(queue) - len(failed_jobs)}/{len(queue)}' \
                   f' songs in {time.time() - start_time:.0f}s\n'
@@ -173,231 +201,180 @@ class Savify:
         self.queue_size -= len(queue)
         self.completed -= len(queue)
 
-    def _download(self, track: Track) -> dict:
-        extractor = 'ytsearch'
-        if track.platform == Platform.SPOTIFY:
-            query = track.url if track.track_type == Type.EPISODE else f'{extractor}:{str(track)} audio'
-        else:
-            query = ''
-
-        output = self.path_holder.get_download_dir() / f'{_sort_dir(track, self.group)}' / safe_path_string(
-            f'{str(track)}.{self.download_format}')
-
-        output_temp = f'{str(self.path_holder.get_temp_dir())}/{track.id}.%(ext)s'
-
-        status = {
-            'track': track,
-            'returncode': -1,
-            'location': output,
-        }
-
-        if check_file(output):
-            self.logger.info(f'{str(track)} -> is already downloaded. Skipping...')
-            status['returncode'] = 0
-            self.completed += 1
-            return status
-
-        create_dir(output.parent)
-
-        options = {
-            'format': 'bestaudio/best',
-            'outtmpl': output_temp,
-            'restrictfilenames': True,
-            'ignoreerrors': False,
-            'nooverwrites': True,
-            'noplaylist': True,
-            'prefer_ffmpeg': True,
-            'logger': self.logger,
-            'progress_hooks': [_progress],
-			
-			# --------------------------------------------------------------------------------------------------------------------------------------
-
-            # ARGS ADDED BY NUGHU
+    def _transport_options(self):
+        return {
             'sleep_interval': 45,
             'max_sleep_interval': 60,
-            'sleep-requests': 30,
+            'sleep_interval_requests': 30,
             'retries': 1,
-            'retry-sleep': 30,
-            'force_ipv4': True,
-
-        '''
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['web_embedded'],
-                }
-            },
-        '''
-
-			# --------------------------------------------------------------------------------------------------------------------------------------
-
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': self.download_format,
-                'preferredquality': self.quality,
-            }],
-
-            'postprocessor_args': [
-                '-write_id3v1', '1',
-                '-id3v2_version', '3',
-                '-metadata', f'title={track.name}',
-                '-metadata', f'album={track.album_name}',
-                '-metadata', f'date={track.release_date}',
-                '-metadata', f'artist={"/".join(track.artists)}',
-                '-metadata', f'disc={track.disc_number}',
-                '-metadata', f'track={track.track_number}/{track.album_track_count}',
-            ],
-
-
+            'retry_sleep_functions': {'http': lambda attempt: 30},
+            'source_address': '0.0.0.0',
             **self.ydl_options,
         }
-        if self.ffmpeg_location != 'ffmpeg':
-            options['ffmpeg_location'] = self.ffmpeg_location
 
-        attempt = 0
-        downloaded_temp = None
-        while True:
-            attempt += 1
+    def _output_path(self, track):
+        extension = 'ogg' if self.download_format == Format.VORBIS else self.download_format
+        return self.path_holder.get_download_dir() / _sort_dir(track, self.group) / safe_path_string(
+            '{}.{}'.format(track, extension))
 
-            try:
-                with YoutubeDL(options) as ydl:
-                    ydl.download([query])
-
-                    # Some YouTube searches resolve to a playlist with 0 items instead of
-                    # raising an exception. In that case, fail this track immediately so the
-                    # queue can continue without getting stuck in an endless retry loop.
-                    from pathlib import Path as _Path
-                    temp_dir = _Path(self.path_holder.get_temp_dir())
-                    matches = list(temp_dir.glob(f"{track.id}.*"))
-                    if not matches:
-                        error_msg = f"No results found for '{str(track)}'."
-                        self.logger.error(error_msg)
-                        status['returncode'] = 1
-                        status['error'] = error_msg
-                        self.completed += 1
-                        return status
-
-                    # The downloaded file may have a different extension (eg. .webm)
-                    # than the final post-processed extension (.mp3). Check for any
-                    # temp file matching the track id to detect completion.
-                    preferred = temp_dir / f"{track.id}.{self.download_format}"
-                    if preferred.exists():
-                        downloaded_temp = preferred
-                    else:
-                        # case-insensitive match fallback
-                        lower_matches = [m for m in matches if m.suffix.lower() == f'.{self.download_format.lower()}']
-                        downloaded_temp = lower_matches[0] if lower_matches else matches[0]
-                    break
-
-            except YoutubeDlExtractionError as ex:
-                if attempt > self.retry:
-                    status['returncode'] = 1
-                    status['error'] = "Failed to download song."
-                    self.logger.error(ex.message)
-                    self.completed += 1
-                    return status
-
-            except DownloadError as ex:
-                error_msg = str(ex)
-                # Log the error message at ERROR level for user visibility
-                self.logger.error(f"Download error for '{str(track)}': {error_msg}")
-                # Log full traceback at DEBUG level
-                self.logger.debug(f"Traceback for '{str(track)}':\n{traceback.format_exc()}")
-                
-                if attempt > self.retry:
-                    status['returncode'] = 1
-                    status['error'] = error_msg
-                    self.completed += 1
-                    return status
-                # Continue retry loop
-
-        # decide which temp file was actually created by yt-dlp
-        from pathlib import Path as _Path2
-        source_temp = _Path2(downloaded_temp) if downloaded_temp is not None else Path(output_temp)
-
-        if self.download_format != Format.MP3 or self.skip_cover_art:
-            try:
-                move(str(source_temp), output)
-            except ShutilError:
-                status['returncode'] = 1
-                status['error'] = 'Filesystem error.'
-                self.logger.error('Failed to move temp file!')
-                self.completed += 1
-                return status
-
-            status['returncode'] = 0
-            self.completed += 1
-            self.logger.info(f'Downloaded {self.completed} / {self.queue_size} -> {str(track)}')
-            return status
-
-        attempt = 0
-        while True:
-            attempt += 1
-            cover_art_name = f'{track.album_name} - {track.artists[0]}'
-
-            if cover_art_name in self.downloaded_cover_art:
-                cover_art = self.downloaded_cover_art[cover_art_name]
-            else:
-                cover_art = self.path_holder.download_file(track.cover_art_url, extension='jpg')
-                self.downloaded_cover_art[cover_art_name] = cover_art
-
-            # Build ffmpeg args and explicit metadata to embed into final MP3
-            def _esc(val):
-                try:
-                    return str(val).replace('"', '\\"')
-                except Exception:
-                    return ''
-
-            if str(source_temp).lower().endswith(f'.{self.download_format.lower()}'):
-                ffmpeg_output_args = '-loglevel quiet -hide_banner -y -map 0:0 -map 1:0 -c copy -id3v2_version 3 '
-            else:
-                ffmpeg_output_args = '-loglevel quiet -hide_banner -y -map 0:a -map 1:0 -c:a libmp3lame -q:a 2 -id3v2_version 3 '
-
-            meta_parts = [
-                f'-metadata title="{_esc(track.name)}"',
-                f'-metadata album="{_esc(track.album_name)}"',
-                f'-metadata artist="{_esc("/".join(track.artists))}"',
-                f'-metadata date="{_esc(track.release_date)}"',
-                f'-metadata track="{_esc(str(track.track_number) + "/" + str(track.album_track_count))}"',
-                f'-metadata disc="{_esc(track.disc_number)}"',
-            ]
-            metadata_str = ' ' + ' '.join(meta_parts) + ' '
-
-            ffmpeg = FFmpeg(executable=self.ffmpeg_location,
-                            inputs={str(source_temp): None, str(cover_art): None},
-                            outputs={
-                                str(output): ffmpeg_output_args + metadata_str + '-metadata:s:v title="Album cover" -metadata:s:v comment="Cover (front)" '
-                            }
-                            )
-
-            try:
-                ffmpeg.run()
-                break
-
-            except FFRuntimeError:
-                if attempt > self.retry:
-                    try:
-                        move(str(source_temp), output)
-                        break
-
-                    except ShutilError:
-                        status['returncode'] = 1
-                        status['error'] = 'Filesystem error.'
-                        self.logger.error('Failed to move temp file!')
-                        self.completed += 1
-                        return status
-
-        status['returncode'] = 0
+    def _download(self, track: Track) -> dict:
+        output = self._output_path(track)
+        # Repeated tracks in playlists must not race on the same destination.
+        with self._state_lock:
+            lock = self._output_locks.setdefault(str(output.resolve()), threading.Lock())
         try:
-            from os import remove
+            with lock:
+                return self._download_track(track, output)
+        except Exception as exc:
+            self.logger.error('Failed to download {}: {}'.format(track, exc))
+            self.logger.debug(traceback.format_exc())
+            self.match_store.record(track, 'failed', reason=str(exc))
+            return {'track': track, 'returncode': 1, 'location': output, 'error': str(exc)}
+        finally:
+            with self._state_lock:
+                self.completed += 1
+
+    def _existing_file(self, track, output):
+        if self.verify_existing:
+            actual = validate_audio(output, track, ffmpeg_location=self.ffmpeg_location)
+            sidecar = output.with_suffix(output.suffix + '.source.json')
             try:
-                remove(str(source_temp))
-            except Exception:
-                # fallback to expected path
-                remove(output_temp)
+                record = json.loads(sidecar.read_text(encoding='utf-8'))
+            except (OSError, ValueError) as exc:
+                raise AudioValidationError(
+                    'Existing audio has no readable source record. Use --redownload to replace it after matching.') from exc
+            signature = record.get('signature')
+            if (not isinstance(signature, list) or len(signature) < 3
+                    or normalize(signature[1]) != normalize(track.name)
+                    or not isinstance(signature[2], list) or not signature[2]
+                    or normalize(signature[2][0]) != normalize(track.artists[0])):
+                raise AudioValidationError('Existing file belongs to a different track/version; use --redownload.')
+            self.match_store.record(track, 'existing_verified', actual_duration=actual, location=str(output))
+            self.logger.info('{} -> existing duration and source record checked.'.format(track))
+        else:
+            self.logger.info('{} -> already downloaded. Use --verify-existing to audit, or --redownload to replace.'.format(track))
+        return {'track': track, 'returncode': 0, 'location': output}
 
-        except OSError:
-            pass
+    def _download_track(self, track, output):
+        if check_file(output) and not self.redownload:
+            return self._existing_file(track, output)
+        create_dir(output.parent)
+        if track.platform != Platform.SPOTIFY:
+            raise NoReliableMatch('Unsupported track source.')
+        if track.track_type == Type.EPISODE:
+            candidates = [Match(track.url, str(track.id), track.name, '', track.duration,
+                                1.0, 1.0, 1.0, None, 'direct', True)]
+        else:
+            candidates = self.matcher.candidates(track)
+        last_error = None
+        try:
+            for match in candidates:
+                for attempt in range(self.retry + 1):
+                    try:
+                        with TemporaryDirectory(prefix='savify-', dir=self.path_holder.get_temp_dir()) as folder:
+                            source = self._download_candidate(track, match, Path(folder))
+                            actual = validate_audio(source, track, match, self.ffmpeg_location)
+                            if self.audio_verifier and self.audio_verifier(source, track, match) is not True:
+                                raise AudioValidationError('The custom audio identity verifier rejected this candidate.')
+                            artwork = None
+                            if self.download_format == Format.MP3 and not self.skip_cover_art:
+                                try:
+                                    # Each job owns its temporary art as well as its audio.
+                                    response = requests.get(track.cover_art_url, timeout=20)
+                                    response.raise_for_status()
+                                    artwork = Path(folder) / 'cover.jpg'
+                                    artwork.write_bytes(response.content)
+                                except Exception as exc:
+                                    self.logger.warning('Cover art unavailable for {}: {}'.format(track, exc))
+                                    artwork = None
+                            publish_audio(source, output, track, self.ffmpeg_location, artwork)
+                        self._record_success(track, match, actual, output)
+                        self.logger.info('Downloaded {} -> {} [{:.0%} match]'.format(track, match.url, match.score))
+                        return {'track': track, 'returncode': 0, 'location': output, 'source_url': match.url}
+                    except AudioValidationError as exc:
+                        # Bad content will not become correct by retrying the same URL.
+                        last_error = exc
+                        self.match_store.record(track, 'audio_rejected', url=match.url, reason=str(exc))
+                        break
+                    except (DownloadError, YoutubeDlExtractionError, OSError) as exc:
+                        last_error = exc
+                        self.match_store.record(track, 'download_failed', url=match.url,
+                                                attempt=attempt + 1, reason=str(exc))
+                        self.logger.debug('Candidate {} failed: {}'.format(match.url, exc))
+        except NoReliableMatch as exc:
+            if last_error:
+                raise NoReliableMatch('{} Last candidate error: {}'.format(exc, last_error)) from last_error
+            raise
+        raise NoReliableMatch('No downloadable match for {}: {}'.format(track, last_error or 'no candidates'))
 
-        self.completed += 1
-        self.logger.info(f'Downloaded {self.completed} / {self.queue_size} -> {str(track)}')
-        return status
+    def _download_candidate(self, track, match, folder):
+        completed_paths = []
+
+        def postprocessor_hook(data):
+            if data.get('status') == 'finished':
+                path = (data.get('info_dict') or {}).get('filepath')
+                if path:
+                    completed_paths.append(Path(path))
+
+        options = self._transport_options()
+        extra_processors = [p for p in options.get('postprocessors', []) if p.get('key') != 'FFmpegExtractAudio']
+        hooks = list(options.get('postprocessor_hooks') or []) + [postprocessor_hook]
+        options.update({
+            'format': options.get('format', 'bestaudio/best'),
+            'outtmpl': str(folder / '%(id)s.%(ext)s'),
+            'paths': {},
+            'restrictfilenames': True,
+            'ignoreerrors': False,
+            'overwrites': True,
+            'nooverwrites': False,
+            'noplaylist': True,
+            'extract_flat': False,
+            'simulate': False,
+            'skip_download': False,
+            'logger': self.logger,
+            'ffmpeg_location': self.ffmpeg_location,
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': self.download_format,
+                                'preferredquality': self.quality}] + extra_processors,
+            'postprocessor_hooks': hooks,
+        })
+        if self.ffmpeg_location == 'ffmpeg':
+            options.pop('ffmpeg_location', None)
+        with YoutubeDL(options) as ydl:
+            info = ydl.extract_info(match.url, download=True)
+        if not info or info.get('_type') in ('playlist', 'multi_video'):
+            raise AudioValidationError('No completed single-video download.')
+        if match.source != 'direct' and info.get('id') != match.video_id:
+            raise AudioValidationError('Downloader returned a different video ID.')
+        for key in ('filepath', '_filename'):
+            if info.get(key):
+                completed_paths.append(Path(info[key]))
+        extension = 'ogg' if self.download_format == Format.VORBIS else self.download_format
+        accepted_extensions = {'.' + extension}
+        if self.download_format == Format.AAC:
+            # yt-dlp may emit AAC in an M4A container; publish_audio remuxes to
+            # the requested .aac output without re-encoding it.
+            accepted_extensions.add('.m4a')
+        # This exact expected converted filename is also valid; never glob *.part/json.
+        completed_paths.append(folder / '{}.{}'.format(info.get('id'), extension))
+        for path in reversed(completed_paths):
+            if path.suffix.lower() in accepted_extensions and path.is_file() and path.stat().st_size > 0:
+                if path.resolve().parent == folder.resolve():
+                    return path
+        raise AudioValidationError('yt-dlp did not produce the requested completed audio format.')
+
+    def _record_success(self, track, match, actual, output):
+        if match.source != 'direct' and self.match_config.use_cache:
+            self.match_store.remember(track, match, actual)
+        record = {'signature': self.match_store.signature(track), 'match': asdict(match),
+                  'actual_duration': actual, 'recorded_at': time.time()}
+        sidecar = output.with_suffix(output.suffix + '.source.json')
+        temp = sidecar.with_name(sidecar.name + '.' + uuid4().hex + '.tmp')
+        try:
+            temp.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
+            os.replace(temp, sidecar)
+        except OSError as exc:
+            self.logger.warning('Could not write source record: {}'.format(exc))
+        finally:
+            temp.unlink(missing_ok=True)
+        self.match_store.record(track, 'downloaded', location=str(output), **record)
+

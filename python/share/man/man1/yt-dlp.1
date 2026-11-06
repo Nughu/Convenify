@@ -2714,22 +2714,21 @@ respectively
 The currently available clients are \f[V]web\f[R], \f[V]web_safari\f[R],
 \f[V]web_embedded\f[R], \f[V]web_music\f[R], \f[V]web_creator\f[R],
 \f[V]mweb\f[R], \f[V]ios\f[R], \f[V]visionos\f[R], \f[V]android\f[R],
-\f[V]android_vr\f[R], \f[V]tv\f[R], \f[V]tv_downgraded\f[R], and
-\f[V]tv_simply\f[R].
-By default, \f[V]visionos,web\f[R] is used.
-If no JavaScript runtime/engine is available, then \f[V]web\f[R] is
-omitted.
+\f[V]android_vr\f[R], \f[V]tv\f[R], \f[V]tv_downgraded\f[R],
+\f[V]tv_samsung\f[R], and \f[V]tv_simply\f[R].
+By default, \f[V]tv_samsung,visionos,web\f[R] is used.
+If no JavaScript runtime/engine is available, then \f[V]web\f[R] and
+\f[V]tv_samsung\f[R] are omitted.
 If logged-in cookies are passed to yt-dlp, then
-\f[V]web_embedded,tv_downgraded,web\f[R] is used for free accounts and
-\f[V]web_creator,tv_downgraded,web\f[R] is used for premium accounts.
+\f[V]web_embedded,tv_samsung,web\f[R] is used for free accounts and
+\f[V]web_creator,tv_samsung,web\f[R] is used for premium accounts.
 The \f[V]web_music\f[R] client is added for \f[V]music.youtube.com\f[R]
 URLs when logged-in cookies are used.
 The \f[V]web_embedded\f[R] client is added for age-restricted videos but
 only successfully works around the age-restriction sometimes (e.g.
 if the video is embeddable).
-The \f[V]tv_downgraded\f[R] and \f[V]web_embedded\f[R] clients may be
-added as a fallback if \f[V]android_vr\f[R] or \f[V]visionos\f[R] is
-unable to access a video.
+The \f[V]web_embedded\f[R] client may be added as a fallback if
+\f[V]android_vr\f[R] or \f[V]visionos\f[R] is unable to access a video.
 The \f[V]web_creator\f[R] client is added for age-restricted videos if
 account age-verification is required.
 Some clients, such as \f[V]web_creator\f[R] and \f[V]web_music\f[R],
@@ -3102,6 +3101,10 @@ One of \f[V]always\f[R], \f[V]never\f[R], or \f[V]auto\f[R].
 The default \f[V]auto\f[R] policy tries to avoid exceeding the web
 client\[aq]s API rate-limit by only making an extra request when Vimeo
 publicizes the video\[aq]s downloadability
+.SS adn
+.IP \[bu] 2
+\f[V]profile_id\f[R]: The numeric ID of the premium account profile that
+will be used to download videos (default: \f[V]1\f[R])
 .SS zan
 .IP \[bu] 2
 \f[V]split_angles\f[R]: Split multi-angle streams into separate angle
@@ -3212,7 +3215,7 @@ You can suppress this warning by adding \f[V]--no-update\f[R] to your
 command or configuration file.
 .SS DEPENDENCIES
 .PP
-Python versions 3.10+ (CPython) and 3.11+ (PyPy) are supported.
+Python versions 3.11+ (CPython and PyPy) are supported.
 Other versions and implementations may or may not work correctly.
 .PP
 While all the other dependencies are optional, \f[V]ffmpeg\f[R],
@@ -3397,7 +3400,7 @@ officially supported.
 This may or may not work correctly.
 .SS Platform-independent Binary (UNIX)
 .PP
-You will need the build tools \f[V]python\f[R] (3.10+), \f[V]zip\f[R],
+You will need the build tools \f[V]python\f[R] (3.11+), \f[V]zip\f[R],
 \f[V]make\f[R] (GNU), \f[V]pandoc\f[R]* and \f[V]pytest\f[R]*.
 .PP
 After installing these, simply run \f[V]make\f[R].
@@ -3929,14 +3932,13 @@ Features marked with a \f[B]*\f[R] have been back-ported to youtube-dl
 Some of yt-dlp\[aq]s default options are different from that of
 youtube-dl and youtube-dlc:
 .IP \[bu] 2
-yt-dlp supports only Python 3.10+, and will remove support for more
+yt-dlp supports only Python 3.11+, and will remove support for more
 versions as they become
 EOL (https://devguide.python.org/versions/#python-release-cycle); while
 youtube-dl still supports Python 2.6+ and
 3.2+ (https://github.com/ytdl-org/youtube-dl/issues/30568#issue-1118238743)
 .IP \[bu] 2
-The options \f[V]--auto-number\f[R] (\f[V]-A\f[R]), \f[V]--title\f[R]
-(\f[V]-t\f[R]) and \f[V]--literal\f[R] (\f[V]-l\f[R]), no longer work.
+Some options no longer work.
 See removed options for details
 .IP \[bu] 2
 \f[V]avconv\f[R] is not supported as an alternative to \f[V]ffmpeg\f[R]
@@ -4297,10 +4299,7 @@ These options may no longer work as intended
 --no-include-ads                 Default
 --write-annotations              No supported site has annotations now
 --no-write-annotations           Default
---avconv-location                Removed alias for --ffmpeg-location
 --cn-verification-proxy URL      Removed alias for --geo-verification-proxy URL
---dump-headers                   Removed alias for --print-traffic
---dump-intermediate-pages        Removed alias for --dump-pages
 --youtube-skip-dash-manifest     Removed alias for --extractor-args \[dq]youtube:skip=dash\[dq] (Alias: --no-youtube-include-dash-manifest)
 --youtube-skip-hls-manifest      Removed alias for --extractor-args \[dq]youtube:skip=hls\[dq] (Alias: --no-youtube-include-hls-manifest)
 --youtube-include-dash-manifest  Default (Alias: --no-youtube-skip-dash-manifest)
@@ -4314,13 +4313,16 @@ These options may no longer work as intended
 .fi
 .SS Removed
 .PP
-These options were deprecated since 2014 and have now been entirely
-removed
+These aliases have been removed and may be reused.
+Please update your scripts and configuration files accordingly
 .IP
 .nf
 \f[C]
 -A, --auto-number                -o \[dq]%(autonumber)s-%(id)s.%(ext)s\[dq]
 -t, -l, --title, --literal       -o \[dq]%(title)s-%(id)s.%(ext)s\[dq]
+--avconv-location                --ffmpeg-location
+--dump-headers                   --print-traffic
+--dump-intermediate-pages        --dump-pages
 \f[R]
 .fi
 .SH CONTRIBUTING

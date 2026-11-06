@@ -78,7 +78,7 @@ Recommended
                                       binary. Needs Python (recommended
                                       for Linux/BSD)
 
-  yt-dlp.exe                          Windows (Win8+) standalone x64
+  yt-dlp.exe                          Windows (Win10+) standalone x64
                                       binary (recommended for Windows)
 
   yt-dlp_macos                        Universal MacOS (10.15+) standalone
@@ -117,10 +117,10 @@ Alternatives
   yt-dlp_musllinux_aarch64.zip        Unpackaged Linux (musl 1.2+)
                                       aarch64 executable (no auto-update)
 
-  yt-dlp_x86.exe                      Windows (Win8+) standalone x86
+  yt-dlp_x86.exe                      Windows (Win10+) standalone x86
                                       (32-bit) binary
 
-  yt-dlp_win_x86.zip                  Unpackaged Windows (Win8+) x86
+  yt-dlp_win_x86.zip                  Unpackaged Windows (Win10+) x86
                                       (32-bit) executable (no
                                       auto-update)
 
@@ -130,7 +130,7 @@ Alternatives
   yt-dlp_win_arm64.zip                Unpackaged Windows (Win10+) ARM64
                                       executable (no auto-update)
 
-  yt-dlp_win.zip                      Unpackaged Windows (Win8+) x64
+  yt-dlp_win.zip                      Unpackaged Windows (Win10+) x64
                                       executable (no auto-update)
 
   yt-dlp_macos.zip                    Unpackaged MacOS (10.15+)
@@ -248,8 +248,8 @@ configuration file.
 
 DEPENDENCIES
 
-Python versions 3.10+ (CPython) and 3.11+ (PyPy) are supported. Other
-versions and implementations may or may not work correctly.
+Python versions 3.11+ (CPython and PyPy) are supported. Other versions
+and implementations may or may not work correctly.
 
 While all the other dependencies are optional, ffmpeg, ffprobe,
 yt-dlp-ejs and a supported JavaScript runtime/engine are highly
@@ -365,7 +365,7 @@ may not work correctly.
 
 Platform-independent Binary (UNIX)
 
-You will need the build tools python (3.10+), zip, make (GNU), pandoc*
+You will need the build tools python (3.11+), zip, make (GNU), pandoc*
 and pytest*.
 
 After installing these, simply run make.
@@ -2317,25 +2317,25 @@ youtube
 -   player_client: Clients to extract video data from. The currently
     available clients are web, web_safari, web_embedded, web_music,
     web_creator, mweb, ios, visionos, android, android_vr, tv,
-    tv_downgraded, and tv_simply. By default, visionos,web is used. If
-    no JavaScript runtime/engine is available, then web is omitted. If
-    logged-in cookies are passed to yt-dlp, then
-    web_embedded,tv_downgraded,web is used for free accounts and
-    web_creator,tv_downgraded,web is used for premium accounts. The
-    web_music client is added for music.youtube.com URLs when logged-in
-    cookies are used. The web_embedded client is added for
-    age-restricted videos but only successfully works around the
+    tv_downgraded, tv_samsung, and tv_simply. By default,
+    tv_samsung,visionos,web is used. If no JavaScript runtime/engine is
+    available, then web and tv_samsung are omitted. If logged-in cookies
+    are passed to yt-dlp, then web_embedded,tv_samsung,web is used for
+    free accounts and web_creator,tv_samsung,web is used for premium
+    accounts. The web_music client is added for music.youtube.com URLs
+    when logged-in cookies are used. The web_embedded client is added
+    for age-restricted videos but only successfully works around the
     age-restriction sometimes (e.g. if the video is embeddable). The
-    tv_downgraded and web_embedded clients may be added as a fallback if
-    android_vr or visionos is unable to access a video. The web_creator
-    client is added for age-restricted videos if account
-    age-verification is required. Some clients, such as web_creator and
-    web_music, require a po_token for their formats to be downloadable.
-    Some clients, such as web_creator, will only work with
-    authentication. Not all clients support authentication via cookies.
-    You can use default for the default clients, or you can use all for
-    all clients (not recommended). You can prefix a client with - to
-    exclude it, e.g. youtube:player_client=default,-web
+    web_embedded client may be added as a fallback if android_vr or
+    visionos is unable to access a video. The web_creator client is
+    added for age-restricted videos if account age-verification is
+    required. Some clients, such as web_creator and web_music, require a
+    po_token for their formats to be downloadable. Some clients, such as
+    web_creator, will only work with authentication. Not all clients
+    support authentication via cookies. You can use default for the
+    default clients, or you can use all for all clients (not
+    recommended). You can prefix a client with - to exclude it, e.g.
+    youtube:player_client=default,-web
 -   player_skip: Skip some network requests that are generally needed
     for robust extraction. One or more of configs (skip client configs),
     webpage (skip initial webpage), js (skip js player), initial_data
@@ -2616,6 +2616,11 @@ vimeo
     tries to avoid exceeding the web client's API rate-limit by only
     making an extra request when Vimeo publicizes the video's
     downloadability
+
+adn
+
+-   profile_id: The numeric ID of the premium account profile that will
+    be used to download videos (default: 1)
 
 zan
 
@@ -3015,11 +3020,10 @@ Differences in default behavior
 Some of yt-dlp's default options are different from that of youtube-dl
 and youtube-dlc:
 
--   yt-dlp supports only Python 3.10+, and will remove support for more
+-   yt-dlp supports only Python 3.11+, and will remove support for more
     versions as they become EOL; while youtube-dl still supports Python
     2.6+ and 3.2+
--   The options --auto-number (-A), --title (-t) and --literal (-l), no
-    longer work. See removed options for details
+-   Some options no longer work. See removed options for details
 -   avconv is not supported as an alternative to ffmpeg
 -   yt-dlp stores config files in slightly different locations to
     youtube-dl. See CONFIGURATION for a list of correct locations
@@ -3286,10 +3290,7 @@ These options may no longer work as intended
     --no-include-ads                 Default
     --write-annotations              No supported site has annotations now
     --no-write-annotations           Default
-    --avconv-location                Removed alias for --ffmpeg-location
     --cn-verification-proxy URL      Removed alias for --geo-verification-proxy URL
-    --dump-headers                   Removed alias for --print-traffic
-    --dump-intermediate-pages        Removed alias for --dump-pages
     --youtube-skip-dash-manifest     Removed alias for --extractor-args "youtube:skip=dash" (Alias: --no-youtube-include-dash-manifest)
     --youtube-skip-hls-manifest      Removed alias for --extractor-args "youtube:skip=hls" (Alias: --no-youtube-include-hls-manifest)
     --youtube-include-dash-manifest  Default (Alias: --no-youtube-skip-dash-manifest)
@@ -3302,11 +3303,14 @@ These options may no longer work as intended
 
 Removed
 
-These options were deprecated since 2014 and have now been entirely
-removed
+These aliases have been removed and may be reused. Please update your
+scripts and configuration files accordingly
 
     -A, --auto-number                -o "%(autonumber)s-%(id)s.%(ext)s"
     -t, -l, --title, --literal       -o "%(title)s-%(id)s.%(ext)s"
+    --avconv-location                --ffmpeg-location
+    --dump-headers                   --print-traffic
+    --dump-intermediate-pages        --dump-pages
 
 CONTRIBUTING
 

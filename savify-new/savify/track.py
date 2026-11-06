@@ -26,6 +26,12 @@ class Track:
         self.platform = Platform.SPOTIFY
         self.track_type = track_type
         self._data = spotify_data
+        # Optional matching evidence. Simplified album tracks may have no ISRC.
+        value = spotify_data.get('duration_ms')
+        self.duration_ms = value if isinstance(value, (int, float)) and value > 0 else None
+        self.duration = self.duration_ms / 1000.0 if self.duration_ms else None
+        self.isrc = (spotify_data.get('external_ids') or {}).get('isrc')
+        self.explicit = spotify_data.get('explicit')
 
         try:
             self.album_name = spotify_data['album']['name']
@@ -91,6 +97,6 @@ class Track:
 
 def _spotify_artist_names(artist_data) -> list:
     try:
-        return [artist['name'] for artist in artist_data]
-    except KeyError:
+        return [artist['name'] for artist in artist_data if artist and artist.get('name')] or ['Unknown Artist']
+    except (KeyError, TypeError):
         return ['Unknown Artist']

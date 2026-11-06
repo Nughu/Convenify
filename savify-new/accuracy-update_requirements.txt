@@ -1,0 +1,7 @@
+# Reproducible versions used for validation. This set requires Python 3.11+.
+yt-dlp==2026.10.26
+ytmusicapi==1.12.3
+spotipy==2.26.0
+requests==2.34.2
+validators==0.36.0
+click==8.5.0

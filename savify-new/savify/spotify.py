@@ -1,4 +1,5 @@
 import spotipy
+import threading
 from spotipy.oauth2 import SpotifyClientCredentials
 
 from .track import Track
@@ -7,6 +8,8 @@ from .types import Type
 
 class Spotify:
     def __init__(self, api_credentials=None) -> None:
+        self._enrichment_lock = threading.Lock()
+        self._enrichment_cache = {}
         if api_credentials is None:
             self.sp = spotipy.Spotify(client_credentials_manager=SpotifyClientCredentials())
         else:
@@ -21,7 +24,7 @@ class Spotify:
                 return [Track(results[f'{Type.TRACK}s']['items'][0])]
 
             elif query_type == Type.ALBUM:
-                return _pack_album(self.sp.album(results[f'{Type.ALBUM}s']['items'][0]['id']))
+                return self._get_album_tracks(results[f'{Type.ALBUM}s']['items'][0]['id'])
 
             elif query_type == Type.PLAYLIST:
                 return self._get_playlist_tracks(results[f'{Type.PLAYLIST}s']['items'][0]['id'])
@@ -31,7 +34,7 @@ class Spotify:
                     albums = self._get_artist_albums(results[f'{Type.ARTIST}s']['items'][0]['id'])
                     tracks = list()
                     for album in albums:
-                        tracks.extend(_pack_album(self.sp.album(album['id'])))
+                        tracks.extend(self._get_album_tracks(album['id']))
 
                     return tracks
 
@@ -47,7 +50,7 @@ class Spotify:
                 return [Track(self.sp.track(query))]
 
             elif 'album' in query:
-                return _pack_album(self.sp.album(query))
+                return self._get_album_tracks(query)
 
             elif 'playlist' in query:
                 return self._get_playlist_tracks(query)
@@ -63,7 +66,7 @@ class Spotify:
                     albums = self._get_artist_albums(query)
                     tracks = list()
                     for album in albums:
-                        tracks.extend(_pack_album(self.sp.album(album['id'])))
+                        tracks.extend(self._get_album_tracks(album['id']))
 
                     return tracks
 
@@ -86,6 +89,28 @@ class Spotify:
         playlist['tracks'] = tracks
 
         return _pack_playlist(playlist)
+
+    def _get_album_tracks(self, album_id):
+        album = self.sp.album(album_id)
+        page = album['tracks']
+        items = list(page.get('items') or [])
+        while page.get('next'):
+            page = self.sp.next(page)
+            items.extend(page.get('items') or [])
+        album = dict(album, tracks=dict(album['tracks'], items=items, next=None))
+        return _pack_album(album)
+
+    def enrich_track(self, track):
+        """Lazy, optional full-track lookup after ordinary music searches fail."""
+        with self._enrichment_lock:
+            if track.id not in self._enrichment_cache:
+                self._enrichment_cache[track.id] = self.sp.track(track.id)
+            data = self._enrichment_cache[track.id]
+        track.isrc = track.isrc or (data.get('external_ids') or {}).get('isrc')
+        duration = data.get('duration_ms')
+        if not track.duration_ms and isinstance(duration, (int, float)) and duration > 0:
+            track.duration_ms, track.duration = duration, duration / 1000.0
+        return track
 
     def _get_show_episodes(self, show_id) -> list:
         show = self.sp.show(show_id, 'US')
@@ -125,8 +150,8 @@ class Spotify:
 def _pack_album(album) -> list:
     tracks = list()
     for track in album['tracks']['items']:
-        track_data = track
-        track_data['album'] = album
+        track_data = dict(track)
+        track_data['album'] = {key: value for key, value in album.items() if key != 'tracks'}
         tracks.append(Track(track_data))
 
     return tracks
