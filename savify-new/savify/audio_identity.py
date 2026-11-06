@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 import hashlib
 import json
 import math
+import re
 import subprocess
 import time
 
@@ -35,6 +36,7 @@ class IdentityResult:
     # An actual lookup without usable identification, not a network failure or
     # conflicting recording links. Only this can permit a duration-led fallback.
     unrecognized: bool = False
+    incomplete: bool = False
 
     def to_dict(self):
         return asdict(self)
@@ -148,10 +150,25 @@ class AcoustIDClient:
         raise IdentityError('AcoustID lookup failed.')
 
 
+def _base_recording_title(value):
+    # Catalogs often put remix/version names in a suffix, while fingerprint
+    # databases omit that suffix. Its absence is uncertainty, not a different song.
+    base = re.sub(r'(?:\s+[-–—]\s+|\s*\()[^()]*\b(?:remix|mix|edit|version|acoustic|instrumental|live)\b[^()]*\)?$',
+                  '', str(value or ''), flags=re.I)
+    return _clean_title(base)
+
+
+def _missing_version(track, title):
+    wanted, found = _clean_title(track.name), _clean_title(title)
+    return (wanted != _base_recording_title(track.name)
+            and found == _base_recording_title(title)
+            and similarity(_base_recording_title(track.name), found) >= .93)
+
+
 def recording_relation(track, recording):
     """Return same/different/uncertain; album, label and IDs are not requirements."""
     title = recording.get('title') or ''
-    artists = [artist.get('name', '').strip() for artist in recording.get('artists', [])
+    artists = [artist.get('name', '').strip() for artist in recording.get('artists') or []
                if isinstance(artist, dict) and isinstance(artist.get('name'), str) and artist.get('name', '').strip()]
     if not title or not artists:
         return 'uncertain'
@@ -160,7 +177,11 @@ def recording_relation(track, recording):
     # Compare complete credits too; never split every slash into a new artist.
     artist_score = _artist_score(track, {'artists': artists + [' / '.join(artists)]})
     # Mild spelling/credit differences need review, not automatic replacement.
-    if title_score < 0.60 or artist_score < 0.50:
+    if artist_score < 0.50:
+        return 'different'
+    if _missing_version(track, title):
+        return 'uncertain'
+    if title_score < 0.60:
         return 'different'
     if (title_score >= 0.93 and artist_score >= 0.90
             and _versions(track.name) == _versions(title)):
@@ -197,6 +218,18 @@ def assess_response(track, body, actual_duration, min_score=0.90):
                 relations.append('uncertain')
                 continue
             relation = recording_relation(track, recording)
+            issue = ''
+            if relation == 'uncertain':
+                if not recording.get('title') or not any(a.get('name') for a in recording.get('artists') or [] if isinstance(a, dict)):
+                    issue = 'missing title or artist'
+                    if (recording.get('title') and similarity(_base_recording_title(track.name), _base_recording_title(recording['title'])) < .60
+                            or recording.get('artists') and any(a.get('name') for a in recording['artists'] if isinstance(a, dict))
+                            and _artist_score(track, {'artists': recording['artists']}) < .50):
+                        issue = 'conflicting partial metadata'
+                elif _missing_version(track, recording.get('title')):
+                    issue = 'missing requested version'
+                else:
+                    issue = 'artist/title/version uncertain'
             recording_duration = duration_seconds(recording.get('duration'))
             reference_duration = expected_duration or recording_duration
             duration_ok = (reference_duration is not None and
@@ -204,19 +237,25 @@ def assess_response(track, body, actual_duration, min_score=0.90):
             if relation == 'same':
                 if reference_duration is None:
                     relation = 'uncertain'  # A sampled fingerprint alone cannot rule out a full album/clip.
+                    issue = 'missing reference duration'
                 elif not duration_ok:
                     relation = 'different_length'
             relations.append(relation)
             evidence.append({'id': recording.get('id'), 'title': recording.get('title'),
-                             'artists': [a.get('name') for a in recording.get('artists', []) if isinstance(a, dict)],
-                             'duration': recording_duration, 'score': item.get('score'), 'relation': relation})
-    if relations and all(r == 'same' for r in relations):
+                             'artists': [a.get('name') for a in recording.get('artists') or [] if isinstance(a, dict)],
+                             'duration': recording_duration, 'score': item.get('score'), 'relation': relation, 'issue': issue})
+    # Unlinked IDs/empty records do not contradict a fully identified recording.
+    if 'same' in relations and all(r['relation'] == 'same' or (not r['title'] and not any(r['artists'])) for r in evidence):
         return IdentityResult('verified', 'Audio fingerprint, artist/title, version and duration agree.', top, evidence, actual_duration)
     if relations and all(r in ('different', 'different_length') for r in relations):
         return IdentityResult('mismatch', 'High-confidence audio identification contradicts the intended song or length.', top, evidence, actual_duration)
     unrecognized = not any(r.get('title') or any(r.get('artists') or []) for r in evidence)
-    return IdentityResult('unknown', 'Ambiguous or incomplete recording links; manual review required.',
-                          top, evidence, actual_duration, unrecognized=unrecognized)
+    incomplete = bool(evidence) and all(r['relation'] == 'same' or r['issue'] in (
+        'missing title or artist', 'missing requested version', 'missing reference duration') for r in evidence)
+    issues = sorted({r['issue'] or r['relation'] for r in evidence if r['relation'] != 'same'})
+    reason = 'Fingerprint lookup could not confirm identity: {}.'.format(', '.join(issues) or 'no linked recording metadata')
+    return IdentityResult('unknown', reason, top, evidence, actual_duration,
+                          unrecognized=unrecognized, incomplete=incomplete)
 
 
 class AudioIdentifier:
@@ -228,3 +267,8 @@ class AudioIdentifier:
         if duration < 15:
             return IdentityResult('unknown', 'Too short for confident automatic fingerprint identification.', duration=duration)
         return assess_response(track, self.client.lookup(duration, fingerprint), duration)
+
+    def compare(self, original, reference):
+        from .reference_audio import raw_fingerprint, compare_fingerprints
+        return compare_fingerprints(raw_fingerprint(original, self.fingerprinter),
+                                    raw_fingerprint(reference, self.fingerprinter))

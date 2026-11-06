@@ -52,8 +52,11 @@ class AuditState:
             self.db.execute('INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?, ?, ?)',
                             (str(path), digest, self.policy, result['status'], detail, time.time()))
         # SQLite is authoritative; a failed report append does not erase a repair.
+        self.log_event('file_result', **result)
+
+    def log_event(self, event, **details):
         with (self.directory / 'events.jsonl').open('a', encoding='utf-8') as out:
-            out.write(json.dumps(dict(time=time.time(), **result), ensure_ascii=False) + '\n')
+            out.write(json.dumps(dict(time=time.time(), event=event, **details), ensure_ascii=False) + '\n')
 
     def cache_get(self, kind, key, max_age):
         row = self.db.execute('SELECT value, updated FROM cache WHERE kind=? AND key=?', (kind, key)).fetchone()
@@ -93,7 +96,7 @@ class AuditState:
         temporary = target.with_suffix('.csv.tmp')
         keys = ['path', 'status', 'artist', 'title', 'track_id', 'reason', 'duration',
                 'original_duration', 'expected_duration', 'duration_tolerance', 'repair_trigger',
-                'verification', 'score', 'identified_as', 'backup', 'source_url', 'discarded_tags']
+                'catalog_note', 'verification', 'score', 'identified_as', 'backup', 'source_url', 'discarded_tags']
         with temporary.open('w', encoding='utf-8-sig', newline='') as out:
             writer = csv.DictWriter(out, fieldnames=keys, extrasaction='ignore')
             writer.writeheader()

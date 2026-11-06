@@ -35,10 +35,11 @@ def audio_files(root, state_dir, logger, on_error=None):
 
 class LibraryAuditor:
     def __init__(self, root, state, identifier, logger, repairer=None, catalog=None,
-                 ffmpeg_location='ffmpeg', rescan=False, repair_unknown=False):
+                 ffmpeg_location='ffmpeg', rescan=False, repair_unknown=False, reference_check=False):
         self.root, self.state, self.identifier, self.logger = Path(root), state, identifier, logger
         self.repairer, self.catalog = repairer, catalog
         self.ffmpeg_location, self.rescan, self.repair_unknown = ffmpeg_location, rescan, repair_unknown
+        self.reference_check = reference_check
 
     def process(self, path):
         path = Path(path)
@@ -65,18 +66,23 @@ class LibraryAuditor:
             expected = duration_seconds(track.duration)
             tolerance = duration_tolerance(expected, relaxed=True)
             duration_mismatch = False
-            result.update(expected_duration=expected, duration_tolerance=tolerance)
+            catalog_note = getattr(track, 'catalog_note', 'No independent catalog duration available.' if not expected else 'Independent catalog match.')
+            result.update(expected_duration=expected, duration_tolerance=tolerance, catalog_note=catalog_note)
             try:
                 # Probe first: decoding/fingerprinting an entire wrong album is
                 # unnecessary once an independent track length disproves it.
                 duration = probe_audio(path, self.ffmpeg_location)
+                self.logger.info('  Existing file duration: %.1fs; expected: %s', duration,
+                                 '{:.1f}s'.format(expected) if expected else 'unavailable — ' + catalog_note)
                 # Never infer the desired length from the potentially wrong file.
                 if expected and abs(duration - expected) > tolerance:
                     duration_mismatch = True
+                    self.logger.info('  Existing file has a clear duration mismatch; skipping its fingerprint.')
                     identity = IdentityResult('mismatch',
                         'Duration {:.1f}s differs from independently matched {:.1f}s by more than {:.1f}s.'.format(
                             duration, expected, tolerance), duration=duration)
                 else:
+                    self.logger.info('  Decoding and identifying existing file audio.')
                     validate_audio(path, SimpleNamespace(duration=None), ffmpeg_location=self.ffmpeg_location)
                     try:
                         identity = self.identifier.identify(path, track, duration)
@@ -93,17 +99,22 @@ class LibraryAuditor:
                           identified_as='; '.join('{} — {}'.format('/'.join(r.get('artists') or []), r.get('title') or '?')
                                                   for r in identity.recordings))
             assert_unchanged(path, token, digest)
+            verify_reference = (identity.status == 'unknown' and self.reference_check and self.repairer is not None
+                                and expected is not None and (identity.unrecognized or identity.incomplete or identity.recordings))
             should_repair = identity.status in ('mismatch', 'corrupt') or (
-                self.repair_unknown and identity.status == 'unknown')
+                self.repair_unknown and identity.status == 'unknown') or verify_reference
             if should_repair and self.repairer:
+                if verify_reference:
+                    self.logger.info('  Database identification inconclusive; searching for a reference to compare with the existing file.')
                 try:
                     repaired = self.repairer.repair(path, snapshot, track, token, digest,
-                                                    duration_mismatch=duration_mismatch)
+                                                    duration_mismatch=duration_mismatch, verify_existing=verify_reference)
                     digest = repaired.pop('digest')
                     result.update(repaired)
                 except IdentityConfigurationError:
                     raise
                 except Exception as exc:
+                    self.logger.debug('Repair failure details for %s', path, exc_info=True)
                     # If commit/reporting failed AFTER a successful atomic swap,
                     # report the journaled replacement rather than a false failure.
                     current_digest = file_digest(path)
@@ -116,6 +127,7 @@ class LibraryAuditor:
         except IdentityConfigurationError:
             raise
         except Exception as exc:
+            self.logger.debug('Audit failure details for %s', path, exc_info=True)
             result.update(status='error', reason=str(exc))
         self.state.record(path, digest, result)
         return result
@@ -154,8 +166,13 @@ def parser():
     result.add_argument('--limit', type=int, help='Process at most N files for an initial trial.')
     result.add_argument('--ffmpeg-location', default='ffmpeg', help='FFmpeg executable or its directory.')
     result.add_argument('--fpcalc', help='Optional Chromaprint fpcalc executable, for FFmpeg builds without Chromaprint.')
-    result.add_argument('--spotify', action='store_true', help=(
-        'Use SPOTIPY_CLIENT_ID/SECRET for independent duration/ISRC evidence; clear length mismatches skip original fingerprints.'))
+    catalog = result.add_mutually_exclusive_group()
+    catalog.add_argument('--spotify', dest='spotify', action='store_true', help=(
+        'Use SPOTIPY_CLIENT_ID/SECRET for expected duration (also enabled automatically when both credentials are set).'))
+    catalog.add_argument('--no-spotify', dest='spotify', action='store_false', help='Disable optional Spotify catalog lookups.')
+    result.set_defaults(spotify=None)
+    result.add_argument('--no-reference-check', action='store_true', help=(
+        'Leave unidentified files for review instead of downloading matched references for direct audio comparison.'))
     result.add_argument('--match-overrides', type=Path, help='JSON mapping report track_id values to individual YouTube URLs.')
     result.add_argument('--max-candidates', type=int, default=5, help='Maximum replacement downloads per file (default: 5).')
     result.add_argument('--cookies', type=Path, help='Optional yt-dlp cookies.txt file.')
@@ -175,13 +192,19 @@ def main(argv=None):
         command.error('--max-candidates and --limit must be positive')
     if args.cookies and not args.cookies.is_file():
         command.error('--cookies must point to an existing file')
-    if args.spotify and not all(os.environ.get(name) for name in ('SPOTIPY_CLIENT_ID', 'SPOTIPY_CLIENT_SECRET')):
+    has_spotify_credentials = all(os.environ.get(name) for name in ('SPOTIPY_CLIENT_ID', 'SPOTIPY_CLIENT_SECRET'))
+    if args.spotify and not has_spotify_credentials:
         command.error('--spotify requires SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET')
+    use_spotify = has_spotify_credentials if args.spotify is None else args.spotify
     state_dir = args.state_dir.expanduser().resolve() if args.state_dir else root / '_savify_audit'
     if state_dir == root or state_dir in root.parents:
         command.error('--state-dir must be a separate directory, not the music root or its parent')
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format='%(levelname)s: %(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     logger = logging.getLogger('savify.audit')
+    logger.setLevel(logging.DEBUG)
+    for handler in logging.getLogger().handlers:
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            handler.setLevel(logging.DEBUG if args.verbose else logging.INFO)
     try:
         fingerprinter = Fingerprinter(args.ffmpeg_location, args.fpcalc)
         _run([ffmpeg_binary(args.ffmpeg_location), '-version'], timeout=15)
@@ -189,8 +212,14 @@ def main(argv=None):
         client = AcoustIDClient(os.environ.get('ACOUSTID_API_KEY'))
         if args.repair:
             logger.info('Repair enabled. Close Traktor/tag editors. Originals will be backed up before replacement.')
+            logger.info('Unknown-file reference comparison: %s.', 'disabled' if args.no_reference_check else 'enabled when an independent duration is known')
+        logger.info('Spotify expected-duration lookup: %s.', 'enabled' if use_spotify else 'disabled; set SPOTIPY_CLIENT_ID/SECRET to enable')
         with audit_lock(state_dir):
             state = AuditState(state_dir, root)
+            file_log = logging.FileHandler(state_dir / 'audit.log', encoding='utf-8')
+            file_log.setLevel(logging.DEBUG)
+            file_log.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s'))
+            logger.addHandler(file_log)
             try:
                 if args.rescan:
                     with state.db:
@@ -198,7 +227,7 @@ def main(argv=None):
                 client.cache = state
                 identifier = AudioIdentifier(fingerprinter, client)
                 catalog = None
-                if args.spotify:
+                if use_spotify:
                     from spotipy import Spotify
                     from spotipy.cache_handler import MemoryCacheHandler
                     from spotipy.oauth2 import SpotifyClientCredentials
@@ -216,7 +245,7 @@ def main(argv=None):
                     repairer = LibraryRepairer(root, state, matcher, identifier, logger, args.ffmpeg_location,
                                                options, args.max_candidates)
                 auditor = LibraryAuditor(root, state, identifier, logger, repairer, catalog, args.ffmpeg_location,
-                                         args.rescan, args.repair_unknown)
+                                         args.rescan, args.repair_unknown, reference_check=not args.no_reference_check)
                 counts = auditor.run(args.limit)
                 logger.info('Results: %s', json.dumps(dict(counts), sort_keys=True))
                 logger.info('Report: %s', state_dir / 'report.csv')
@@ -226,6 +255,8 @@ def main(argv=None):
                     state.export_report()
                 finally:
                     state.close()
+                    logger.removeHandler(file_log)
+                    file_log.close()
     except KeyboardInterrupt:
         logger.warning('Interrupted. Completed files are checkpointed; rerun the same command to resume.')
         return 130

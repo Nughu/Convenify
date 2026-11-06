@@ -4,12 +4,15 @@ Run the tool against a directory; it scans that directory and all subdirectories
 It reads the intended artist/title from each file's existing tags and checks
 independently known duration before identifying the audio using Chromaprint and
 AcoustID. With `--repair`, it attempts replacements for confirmed mismatches and
-corrupt files.
+corrupt files. For unidentified files with a reliable expected duration, it can
+also download a matched reference and compare the audio directly. No replacement
+files need to exist locally before starting.
 
 Every replacement must pass duration checks, full audio decode, and tag/artwork
 preservation checks. Identity is normally confirmed by fingerprint. For a proven
-duration mismatch, a strong artist/title/version and length match can also qualify
-when AcoustID does not recognize the replacement (details below). The original is backed up
+duration mismatch or reference comparison, a strong artist/title/version and length
+match can qualify when database recording metadata is absent or incomplete
+(details below). The original is backed up
 before an atomic replacement at the **same path and filename**. Verified files
 are left byte-for-byte unchanged, including their existing Traktor data.
 
@@ -38,6 +41,10 @@ FFmpeg is required. For fingerprinting, either use an FFmpeg build with its
 The program checks this before starting. Pass `--ffmpeg-location PATH` for a custom
 FFmpeg executable/directory; pass `--fpcalc PATH` if using fpcalc. An FFmpeg
 executable kept inside `savify/` should be passed explicitly to this audit command.
+On Windows, [Gyan's FFmpeg builds](https://www.gyan.dev/ffmpeg/builds/) include
+Chromaprint in the **full** build. Extract `ffmpeg-release-full.7z`, point
+`--ffmpeg-location` at its `bin` directory, and omit `--fpcalc` to use FFmpeg for
+fingerprinting. Check with `ffmpeg.exe -hide_banner -h muxer=chromaprint`.
 
 Register an [AcoustID application](https://acoustid.org/new-application) and use
 its **application/client API key**, not a personal fingerprint-submission key.
@@ -88,20 +95,58 @@ are revisited; successful AcoustID responses are cached for seven days. Use
 `--rescan` to recheck previously accepted files and refresh fingerprint lookups.
 `Ctrl+C` stops the run without undoing completed repairs.
 
-If you want to attempt a new source even for unrecognized/ambiguous originals:
+### Existing file versus temporary reference/replacement
+
+The normal flow is: check an existing file, find a source through the Savify
+matcher, download it temporarily, validate it, then keep the original or install
+the replacement. Candidates are removed after the attempt. Console messages now
+explicitly show these stages; nothing needs to be downloaded beforehand.
+
+When an existing file is `unknown` but has an independently matched expected
+duration, `--repair` automatically attempts direct reference comparison:
+
+1. Download a candidate passing the title/artist/version and duration checks.
+2. Identify the candidate through AcoustID where possible. Contradictory identities
+   reject it. Absent fields or omitted version suffixes can use the strong
+   metadata/duration fallback.
+3. Compare the existing audio's raw Chromaprint fingerprint with the reference,
+   allowing a limited time offset for intros.
+4. If they agree, retain the original **byte-for-byte, including Traktor data**.
+   If they clearly differ, back up the original and install the validated reference.
+   If inconclusive, leave the original intact and try another candidate; unresolved
+   files remain `unknown`.
+
+This is agreement with a matched source, not a guarantee that a recording ID or
+uploader's metadata is correct. Comparison covers the first 120 seconds; short,
+silent/repetitive, or intermediate-similarity samples stay inconclusive. It cannot
+exclude differences outside that sample or establish the exact release/master.
+The matcher requires at least 120 fingerprint frames and 75% overlap. A bit-error
+rate up to 0.12 with agreement across four sections indicates a match; at least
+0.30 indicates a clear difference. Intermediate values stay unknown. These are
+conservative heuristics, not calibrated probabilities.
+
+This can increase download traffic for an obscure collection. To leave unknown
+files for review instead, use `--no-reference-check`. Without a reliable expected
+duration, no automatic reference comparison is made. A service/network failure
+does not trigger reference downloads.
+
+If you explicitly want to attempt replacing unknown files even without the
+reference-comparison prerequisites, this option remains available:
 
 ```bash
 python -m savify.library_audit "/path/to/Music" --repair --repair-unknown
 ```
 
-This may replace a file that was already correct but unrecognized. It still never
-publishes an unverified replacement. Without this option, unknown originals are
-left untouched. Sources that cannot be positively identified remain unresolved.
+This may replace a file that was already correct but unrecognized. Direct comparison
+is preferred when available; otherwise this explicit option requires a positively
+fingerprint-identified replacement. It is **not needed** for normal reference
+checks and does not bypass contradictory identity evidence.
 
 ## Optional catalog evidence and source choices
 
 Existing title and artist tags are necessary. Spotify credentials are **optional**.
-If available, enable independent duration/ISRC lookup:
+Lookup is enabled automatically when both credentials are set. `--spotify`
+explicitly requires them; `--no-spotify` disables optional catalog lookup:
 
 ```powershell
 $env:SPOTIPY_CLIENT_ID = "YOUR_CLIENT_ID"
@@ -115,6 +160,10 @@ must agree with the existing artist/title/version; ambiguous lengths are ignored
 No catalog values overwrite the original basic tags. A wrong artist/title tag
 cannot be distinguished from an incorrectly downloaded file by this workflow;
 correct the intended tags before running the tool if those are also wrong.
+The console now shows measured and expected duration. When expected length is
+unavailable, it explains whether lookup was disabled, failed, found no reliable
+version, or found conflicting lengths. Failed searches are no longer cached for a
+month. An unsuccessful ISRC query can fall back to artist/title searches.
 
 ### Duration takes priority
 
@@ -133,8 +182,8 @@ lengths use the existing ordinary tolerance (6%, clamped to 3–15 seconds; belo
 one-hour upload cannot pass for a three-minute track. A small encoding difference
 does not trigger replacement; normal fingerprint verification continues instead.
 
-For these duration-proven mismatches only, an unrecognized replacement fingerprint
-does not prevent repair if the inspected source has a strong title match (at least
+For duration-proven mismatches and direct reference checks, absent or incomplete
+recording metadata does not block a candidate if its inspected source has a strong title match (at least
 0.94), strong artist evidence (at least 0.90), and the requested version. Both its
 declared duration and downloaded audio duration must fit the **ordinary, tighter**
 duration tolerance. Album, label and track IDs are still not requirements.
@@ -143,13 +192,17 @@ A fingerprint that identifies the replacement as wrong, conflicting recording
 links, lookup/network errors, or weak source metadata still rejects the candidate.
 Manual selections still require a positive fingerprint match because they can
 bypass normal search gates. Repairs triggered by fingerprints, corruption, or
-`--repair-unknown` also retain the positive-fingerprint requirement.
+`--repair-unknown` without reference comparison also retain the positive-fingerprint requirement.
 
 Duration plus metadata is less conclusive than fingerprint identification. The
 report and recovery journal explicitly distinguish `verification=metadata_duration`
 from `verification=fingerprint`; the former retains the unknown fingerprint result
 and the original duration-mismatch evidence. Backups and Traktor tag removal work
 the same way in either case.
+Direct comparisons use `verification=reference_fingerprint` when the original is
+retained, or `reference_metadata_duration` when different audio is replaced using
+a reference with incomplete database identity. Installing a fully identified
+reference retains `verification=fingerprint`.
 
 The YouTube matcher retains the previous accuracy improvements: multiple candidates,
 title/artist/version comparison, duration checks where independently available,
@@ -230,9 +283,22 @@ when resuming. Do not share a state directory between different music roots.
 | --- | --- |
 | `report.csv` | Latest result for each encountered path: status, intended song, original/expected/current durations, repair trigger, verification method, reason, backup and replacement URL |
 | `events.jsonl` | Append-only results, including detailed fingerprint recording evidence |
+| `audit.log` | Persistent progress, candidate URLs and full error traces |
 | `audit.sqlite3` | Checkpoints, lookup cache and replacement journal |
 | `backups/` | Byte-for-byte originals, grouped by hash and their relative paths |
 | `youtube-matching.jsonl` | Candidate searches and acceptance/rejection details |
+
+`events.jsonl` includes `candidate_identity`, `reference_comparison`, and final
+`file_result` events. `Existing file` describes the original audio;
+`Downloading temporary ... candidate` means the tool is downloading a new file
+during that run. A rejected candidate is not a missing pre-existing local file.
+`unknown` means unresolved identification, not a download failure or proof that
+the existing file is wrong.
+
+The Windows read-only-handle flush bug has been corrected: backup and staging
+files now use writable handles before read-only attributes are copied. Genuine
+disk/flush failures still abort replacement and retain the original. If a failure
+persists, `audit.log` now contains its stack trace.
 
 CSV is refreshed every 25 files and at completion or normal interruption. JSONL
 and SQLite are updated after every processed file. Historical paths remain in the
@@ -257,13 +323,17 @@ or `error`. Exit codes: 0 = completed with no unresolved encountered files;
 
 ## Validation
 
-The combined suite contains 170 tests. It uses synthetic audio and real FFmpeg,
+The combined suite contains 196 tests. It uses synthetic audio and real FFmpeg,
 Chromaprint, Mutagen, and yt-dlp conversion where applicable. AcoustID responses
 and repair downloads are simulated to test decision-making and failure handling
 without relying on an external catalog or modifying a real music collection.
 Duration tests cover clips, album-length files, small timing differences, skipped
 original fingerprints/decoding, unrecognized replacements, conflicting identities,
 weak source metadata, service failures, and recovery of duration-based repairs.
+Additional tests cover raw reference comparisons after lossy re-encoding and an
+intro, matching/different/inconclusive references, keeping Traktor data on matching
+originals, sparse database links, catalog diagnostics, and a simulated Windows
+flush failure on read-only handles.
 
 Live AcoustID lookup and live YouTube repair have not been validated with your
 application key or collection. Windows locking code is included; automated checks

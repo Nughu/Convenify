@@ -1,5 +1,6 @@
 """Prepare verified replacements, back up originals, then replace atomically."""
 import hashlib
+from itertools import islice
 import os
 from pathlib import Path
 import shutil
@@ -35,6 +36,14 @@ def file_token(path):
 def assert_unchanged(path, token, digest):
     if file_token(path) != token or file_digest(path) != digest or file_token(path) != token:
         raise RepairError('Original changed during the audit; no replacement was made. Close Traktor and retry.')
+
+
+def sync_file(path):
+    # Windows FlushFileBuffers/_commit needs a writable handle. fsync(open(...,
+    # 'rb')) can raise EBADF on Windows even though it works on Linux.
+    with Path(path).open('r+b') as handle:
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def remux_clean(source, output, ffmpeg_location='ffmpeg'):
@@ -73,16 +82,17 @@ class LibraryRepairer:
         self.ffmpeg_location, self.options = ffmpeg_location, options or {}
         self.max_candidates, self.downloader = max_candidates, downloader
 
-    def repair(self, path, snapshot, track, token, digest, duration_mismatch=False):
+    def repair(self, path, snapshot, track, token, digest, duration_mismatch=False, verify_existing=False):
         path = Path(path)
         download_format = {'.ogg': 'vorbis', '.mp4': 'm4a', '.aif': 'wav', '.aiff': 'wav'}.get(
             path.suffix.lower(), path.suffix.lower()[1:])
         errors, attempts = [], 0
         try:
-            for match in self.matcher.candidates(track):
-                if attempts >= self.max_candidates:
-                    break
+            for match in islice(self.matcher.candidates(track), self.max_candidates):
                 attempts += 1
+                self.logger.info('  Downloading temporary %s candidate %s/%s: %s [%s]',
+                                 'reference' if verify_existing else 'replacement', attempts, self.max_candidates,
+                                 match.title, match.url)
                 with TemporaryDirectory(prefix='.savify-repair-', dir=str(path.parent)) as work:
                     work = Path(work)
                     try:
@@ -95,25 +105,44 @@ class LibraryRepairer:
                         snapshot.verify_copy(staging)
                         duration = validate_audio(staging, track, match, self.ffmpeg_location, decode=False)
                         identity = self.identifier.identify(staging, track, duration)
-                        duration_fallback = (duration_mismatch and identity.status == 'unknown'
-                                             and identity.unrecognized
+                        self.state.log_event('candidate_identity', path=str(path), source_url=match.url,
+                                             title=match.title, identity=identity.to_dict())
+                        duration_fallback = ((duration_mismatch or verify_existing) and identity.status == 'unknown'
+                                             and (identity.unrecognized or identity.incomplete)
                                              and metadata_duration_match(track, match, duration))
                         if identity.status != 'verified' and not duration_fallback:
                             raise RepairError('Replacement identity is {}: {}'.format(identity.status, identity.reason))
                         verification = 'metadata_duration' if duration_fallback else 'fingerprint'
+                        comparison = None
+                        if verify_existing:
+                            comparison = self.identifier.compare(path, staging)
+                            self.state.log_event('reference_comparison', path=str(path), source_url=match.url,
+                                                 comparison=comparison.to_dict())
+                            self.logger.info('  Reference comparison: %s — %s', comparison.status, comparison.reason)
+                            if comparison.status == 'same':
+                                assert_unchanged(path, token, digest)
+                                return {'status': 'verified', 'reason': 'Existing audio matches the downloaded reference; original and Traktor tags retained.',
+                                        'digest': digest, 'reference_duration': duration, 'verification': 'reference_fingerprint',
+                                        'reference_comparison': comparison.to_dict(), 'source_url': match.url,
+                                        'reference_identity': identity.to_dict()}
+                            if comparison.status != 'different':
+                                raise RepairError(comparison.reason)
+                            if duration_fallback:
+                                verification = 'reference_metadata_duration'
                     except IdentityConfigurationError:
                         raise
                     except Exception as exc:
                         errors.append(str(exc))
                         self.logger.warning('Rejected replacement for %s: %s', path, exc)
+                        self.logger.debug('Candidate failure details for %s', path, exc_info=True)
                         continue
                     # Failures from this point abort this file. In particular, do
                     # not retry a download after the original changed or a disk error.
                     assert_unchanged(path, token, digest)
+                    self.logger.info('  Backing up original before replacement: %s', path)
                     backup = self._backup(path, token, digest)
+                    sync_file(staging)
                     os.chmod(staging, stat.S_IMODE(path.stat().st_mode))
-                    with staging.open('rb') as handle:
-                        os.fsync(handle.fileno())
                     new_digest = file_digest(staging)
                     replacement_id = self.state.prepare_replacement(path, digest, new_digest, backup, match.url,
                                                                     verification=verification)
@@ -121,16 +150,21 @@ class LibraryRepairer:
                     os.replace(staging, path)  # Same-directory filesystem; original never removed first.
                     self.state.commit_replacement(replacement_id)
                     self.matcher.store.remember(track, match, duration)
-                    reason = ('Replacement matched artist/title/version and expected duration; fingerprint unrecognized.'
+                    reason = ('Replacement matched artist/title/version and expected duration; database identity incomplete or unrecognized.'
                               if duration_fallback else 'Fingerprint-verified replacement installed; original backed up.')
                     return {'status': 'repaired', 'reason': reason, 'verification': verification,
                             'digest': new_digest, 'duration': duration, 'score': identity.score,
                             'backup': str(backup), 'source_url': match.url,
-                            'discarded_tags': snapshot.dropped, 'identity': identity.to_dict()}
+                            'discarded_tags': snapshot.dropped, 'identity': identity.to_dict(),
+                            'reference_comparison': comparison.to_dict() if comparison else None}
         except NoReliableMatch as exc:
             errors.append(str(exc))
-        raise RepairError('No verified replacement after {} candidate(s). {}'.format(
-            attempts, ' | '.join(errors[-3:]) or 'No acceptable source found.'))
+        reason = 'No conclusive {} after {} candidate(s). {}'.format(
+            'reference comparison' if verify_existing else 'replacement', attempts,
+            ' | '.join(errors[-3:]) or 'No acceptable source found.')
+        if verify_existing:
+            return {'status': 'unknown', 'reason': reason, 'digest': digest}
+        raise RepairError(reason)
 
     def _backup(self, path, token, digest):
         backup = self.state.directory / 'backups' / digest[:16] / path.relative_to(self.root)
@@ -141,11 +175,11 @@ class LibraryRepairer:
         else:
             temporary = backup.with_name(backup.name + '.' + uuid4().hex + '.partial')
             try:
-                shutil.copy2(path, temporary)
+                shutil.copyfile(path, temporary)
                 if file_digest(temporary) != digest:
                     raise RepairError('Original changed while making its backup.')
-                with temporary.open('rb') as handle:
-                    os.fsync(handle.fileno())
+                sync_file(temporary)
+                shutil.copystat(path, temporary)
                 os.replace(temporary, backup)
             finally:
                 temporary.unlink(missing_ok=True)
