@@ -46,6 +46,17 @@ class AuditState:
             return json.loads(row[3])
         return None
 
+    def has_content_checkpoint(self, path):
+        """Only successful audio checks or repair journals need a content hash.
+
+        Duration-only results are deliberately re-probed on each run and cannot
+        satisfy a later request for full audio verification.
+        """
+        return bool(self.db.execute(
+            "SELECT 1 FROM files WHERE path=? AND status IN ('verified', 'repaired') "
+            "UNION ALL SELECT 1 FROM replacements WHERE path=? LIMIT 1",
+            (str(path), str(path))).fetchone())
+
     def record(self, path, digest, result):
         detail = json.dumps(result, ensure_ascii=False)
         with self.db:

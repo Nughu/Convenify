@@ -1,4 +1,4 @@
-"""Recursive audio identity audit and safe repair: python -m savify.library_audit."""
+"""Recursive duration audit and safe repair: python -m savify.library_audit."""
 import argparse
 from collections import Counter
 import json
@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from .audio_identity import (AcoustIDClient, AudioIdentifier, Fingerprinter, IdentityError,
                              IdentityConfigurationError, IdentityResult)
 from .library_catalog import CatalogResolver
-from .library_repair import LibraryRepairer, assert_unchanged, file_digest, file_token
+from .library_repair import LibraryRepairer, RepairError, assert_unchanged, file_digest, file_token
 from .library_state import AuditState, audit_lock
 from .library_tags import SUPPORTED_EXTENSIONS, TagSnapshot
 from .media_validation import AudioValidationError, _run, ffmpeg_binary, probe_audio, validate_audio
@@ -35,11 +35,13 @@ def audio_files(root, state_dir, logger, on_error=None):
 
 class LibraryAuditor:
     def __init__(self, root, state, identifier, logger, repairer=None, catalog=None,
-                 ffmpeg_location='ffmpeg', rescan=False, repair_unknown=False, reference_check=False):
+                 ffmpeg_location='ffmpeg', rescan=False, repair_unknown=False, reference_check=False,
+                 full_verification=False):
         self.root, self.state, self.identifier, self.logger = Path(root), state, identifier, logger
         self.repairer, self.catalog = repairer, catalog
         self.ffmpeg_location, self.rescan, self.repair_unknown = ffmpeg_location, rescan, repair_unknown
         self.reference_check = reference_check
+        self.full_verification = full_verification
 
     def process(self, path):
         path = Path(path)
@@ -47,16 +49,19 @@ class LibraryAuditor:
         digest = ''
         try:
             token = file_token(path)
-            digest = file_digest(path)
-            assert_unchanged(path, token, digest)
-            previous = self.state.cached_file(path, digest) if not self.rescan else None
-            if previous:
-                return dict(previous, cached=True)
+            # Read the entire file only for an existing content checkpoint or an
+            # actual verification/repair. Most files need only tags and a probe.
+            if self.full_verification or self.state.has_content_checkpoint(path):
+                digest = file_digest(path)
+                assert_unchanged(path, token, digest)
+                previous = self.state.cached_file(path, digest) if not self.rescan else None
+                if previous:
+                    return dict(previous, cached=True)
             snapshot = TagSnapshot.read(path)
             track = snapshot.intended_track()
             result.update(artist=' / '.join(track.artists), title=track.name, track_id=str(track.id))
             # Recover a crash after os.replace but before the file checkpoint.
-            recovered = self.state.replacement_for(path, digest)
+            recovered = self.state.replacement_for(path, digest) if digest else None
             if recovered and not self.rescan:
                 result.update(recovered, status='repaired', reason='Recovered previously validated replacement from the journal.')
                 self.state.record(path, digest, result)
@@ -81,6 +86,18 @@ class LibraryAuditor:
                     identity = IdentityResult('mismatch',
                         'Duration {:.1f}s differs from independently matched {:.1f}s by more than {:.1f}s.'.format(
                             duration, expected, tolerance), duration=duration)
+                elif not self.full_verification:
+                    if expected:
+                        identity = IdentityResult('duration_match',
+                            'Duration matches within {:.1f}s; presumed correct. Skipping decoding, '
+                            'fingerprinting and reference downloads; original and Traktor tags retained.'.format(tolerance),
+                            duration=duration)
+                        result['verification'] = 'duration_only'
+                    else:
+                        identity = IdentityResult('unknown',
+                            'No reliable expected duration; verification and repair skipped. ' + catalog_note,
+                            duration=duration)
+                        result['verification'] = 'not_checked'
                 else:
                     self.logger.info('  Decoding and identifying existing file audio.')
                     validate_audio(path, SimpleNamespace(duration=None), ffmpeg_location=self.ffmpeg_location)
@@ -91,18 +108,29 @@ class LibraryAuditor:
                     except IdentityError as exc:
                         identity = IdentityResult('unknown', str(exc), duration=duration)
             except AudioValidationError as exc:
-                identity = IdentityResult('corrupt', 'Audio decode/probe failed: {}'.format(exc))
+                if self.full_verification:
+                    identity = IdentityResult('corrupt', 'Audio decode/probe failed: {}'.format(exc))
+                else:
+                    identity = IdentityResult('unknown',
+                        'Cannot measure duration; verification and repair skipped: {}'.format(exc))
+                    result['verification'] = 'not_checked'
             result.update(status=identity.status, reason=identity.reason, score=identity.score,
                           duration=identity.duration, identity=identity.to_dict(),
                           original_duration=identity.duration, original_identity=identity.to_dict(),
                           repair_trigger='duration_mismatch' if duration_mismatch else identity.status,
                           identified_as='; '.join('{} — {}'.format('/'.join(r.get('artists') or []), r.get('title') or '?')
                                                   for r in identity.recordings))
-            assert_unchanged(path, token, digest)
-            verify_reference = (identity.status == 'unknown' and self.reference_check and self.repairer is not None
+            if file_token(path) != token:
+                raise RepairError('Original changed during the audit; no replacement was made. Close Traktor and retry.')
+            verify_reference = (self.full_verification and identity.status == 'unknown' and self.reference_check and self.repairer is not None
                                 and expected is not None and (identity.unrecognized or identity.incomplete or identity.recordings))
-            should_repair = identity.status in ('mismatch', 'corrupt') or (
-                self.repair_unknown and identity.status == 'unknown') or verify_reference
+            should_repair = duration_mismatch or (self.full_verification and (
+                identity.status in ('mismatch', 'corrupt') or (
+                    self.repair_unknown and identity.status == 'unknown') or verify_reference))
+            if should_repair and self.repairer and not digest:
+                digest = file_digest(path)
+            if digest:
+                assert_unchanged(path, token, digest)
             if should_repair and self.repairer:
                 if verify_reference:
                     self.logger.info('  Database identification inconclusive; searching for a reference to compare with the existing file.')
@@ -155,14 +183,20 @@ class LibraryAuditor:
 
 def parser():
     result = argparse.ArgumentParser(description=(
-        'Recursively verify audio against its artist/title tags using Chromaprint/AcoustID. '
-        'Default: audit only. --repair backs up and replaces confidently wrong/corrupt files.'))
+        'Recursively check music durations. Matching lengths skip audio verification and downloads. '
+        'Default: audit only. --repair backs up and replaces clear duration mismatches.'))
     result.add_argument('directory', type=Path, help='Music directory; includes all subdirectories.')
     result.add_argument('--repair', action='store_true', help='Install validated replacements at the original paths.')
+    result.add_argument('--full-verification', action='store_true', help=(
+        'Opt into fingerprint checks even when duration matches or is unavailable; '
+        'with --repair, unknown files may trigger temporary reference downloads.'))
     result.add_argument('--repair-unknown', action='store_true', help=(
-        'With --repair, also attempt unrecognized/ambiguous files. Replacement still requires positive identity verification.'))
+        'With --repair --full-verification, also attempt unrecognized/ambiguous files. '
+        'Replacement still requires positive identity verification.'))
     result.add_argument('--state-dir', type=Path, help='Reports, checkpoints and backups (default: DIRECTORY/_savify_audit).')
-    result.add_argument('--rescan', action='store_true', help='Recheck unchanged verified/repaired files; also refresh fingerprint lookups.')
+    result.add_argument('--rescan', action='store_true', help=(
+        'Recheck unchanged verified/repaired files using the selected mode; also refresh fingerprint lookups. '
+        'Does not enable full verification.'))
     result.add_argument('--limit', type=int, help='Process at most N files for an initial trial.')
     result.add_argument('--ffmpeg-location', default='ffmpeg', help='FFmpeg executable or its directory.')
     result.add_argument('--fpcalc', help='Optional Chromaprint fpcalc executable, for FFmpeg builds without Chromaprint.')
@@ -172,7 +206,7 @@ def parser():
     catalog.add_argument('--no-spotify', dest='spotify', action='store_false', help='Disable optional Spotify catalog lookups.')
     result.set_defaults(spotify=None)
     result.add_argument('--no-reference-check', action='store_true', help=(
-        'Leave unidentified files for review instead of downloading matched references for direct audio comparison.'))
+        'With --full-verification, leave unidentified files for review instead of downloading references.'))
     result.add_argument('--match-overrides', type=Path, help='JSON mapping report track_id values to individual YouTube URLs.')
     result.add_argument('--max-candidates', type=int, default=5, help='Maximum replacement downloads per file (default: 5).')
     result.add_argument('--cookies', type=Path, help='Optional yt-dlp cookies.txt file.')
@@ -188,6 +222,8 @@ def main(argv=None):
         command.error('directory must be an existing directory')
     if args.repair_unknown and not args.repair:
         command.error('--repair-unknown requires --repair')
+    if args.repair_unknown and not args.full_verification:
+        command.error('--repair-unknown requires --full-verification; default mode repairs only duration mismatches')
     if args.max_candidates < 1 or (args.limit is not None and args.limit < 1):
         command.error('--max-candidates and --limit must be positive')
     if args.cookies and not args.cookies.is_file():
@@ -206,13 +242,20 @@ def main(argv=None):
         if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
             handler.setLevel(logging.DEBUG if args.verbose else logging.INFO)
     try:
-        fingerprinter = Fingerprinter(args.ffmpeg_location, args.fpcalc)
         _run([ffmpeg_binary(args.ffmpeg_location), '-version'], timeout=15)
-        fingerprinter.check()
-        client = AcoustIDClient(os.environ.get('ACOUSTID_API_KEY'))
+        identifier, client = None, None
+        if args.repair or args.full_verification:
+            fingerprinter = Fingerprinter(args.ffmpeg_location, args.fpcalc)
+            fingerprinter.check()
+            client = AcoustIDClient(os.environ.get('ACOUSTID_API_KEY'))
+            identifier = AudioIdentifier(fingerprinter, client)
+        logger.info('Audit mode: %s.', 'full audio verification' if args.full_verification else
+                    'duration only; matching lengths skip audio verification and downloads')
         if args.repair:
             logger.info('Repair enabled. Close Traktor/tag editors. Originals will be backed up before replacement.')
-            logger.info('Unknown-file reference comparison: %s.', 'disabled' if args.no_reference_check else 'enabled when an independent duration is known')
+            logger.info('Unknown-file reference comparison: %s.',
+                        'enabled when an independent duration is known' if args.full_verification and not args.no_reference_check
+                        else 'disabled')
         logger.info('Spotify expected-duration lookup: %s.', 'enabled' if use_spotify else 'disabled; set SPOTIPY_CLIENT_ID/SECRET to enable')
         with audit_lock(state_dir):
             state = AuditState(state_dir, root)
@@ -224,8 +267,8 @@ def main(argv=None):
                 if args.rescan:
                     with state.db:
                         state.db.execute("DELETE FROM cache WHERE kind='acoustid'")
-                client.cache = state
-                identifier = AudioIdentifier(fingerprinter, client)
+                if client:
+                    client.cache = state
                 catalog = None
                 if use_spotify:
                     from spotipy import Spotify
@@ -245,7 +288,9 @@ def main(argv=None):
                     repairer = LibraryRepairer(root, state, matcher, identifier, logger, args.ffmpeg_location,
                                                options, args.max_candidates)
                 auditor = LibraryAuditor(root, state, identifier, logger, repairer, catalog, args.ffmpeg_location,
-                                         args.rescan, args.repair_unknown, reference_check=not args.no_reference_check)
+                                         args.rescan, args.repair_unknown,
+                                         reference_check=args.full_verification and not args.no_reference_check,
+                                         full_verification=args.full_verification)
                 counts = auditor.run(args.limit)
                 logger.info('Results: %s', json.dumps(dict(counts), sort_keys=True))
                 logger.info('Report: %s', state_dir / 'report.csv')
