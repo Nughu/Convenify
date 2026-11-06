@@ -5,3 +5,5 @@ validators>=0.18.2
 yt-dlp>=2021.12.1
 requests>=2.25.1
 click>=7.1.2
+mutagen>=1.48.1
+ytmusicapi>=1.12.3
