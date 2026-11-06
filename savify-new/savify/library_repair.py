@@ -67,7 +67,7 @@ def metadata_duration_match(track, match, actual_duration):
     source_duration = duration_seconds(match.duration)
     if not expected or not source_duration or match.manual:
         return False
-    limit = duration_tolerance(expected)
+    limit = duration_tolerance(expected, override=getattr(track, 'duration_tolerance', None))
     return (match.title_score >= 0.94 and match.artist_score >= 0.90
             and _versions(track.name) == _versions(_clean_title(match.title, track.artists))
             and abs(actual_duration - expected) <= limit

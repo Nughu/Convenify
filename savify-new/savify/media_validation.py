@@ -65,7 +65,9 @@ def probe_audio(path, ffmpeg_location='ffmpeg'):
 def validate_audio(path, track, match=None, ffmpeg_location='ffmpeg', decode=True):
     actual = probe_audio(path, ffmpeg_location)
     expected = duration_seconds(getattr(track, 'duration', None))
-    limit = (match.duration_limit if match else None) or duration_tolerance(expected)
+    override = getattr(track, 'duration_tolerance', None)
+    limit = (duration_tolerance(expected, override=override) if override is not None else
+             (match.duration_limit if match and match.duration_limit is not None else duration_tolerance(expected)))
     if expected and abs(actual - expected) > limit:
         raise AudioValidationError('Audio duration {:.1f}s does not match expected {:.1f}s (tolerance {:.1f}s).'.format(
             actual, expected, limit))

@@ -72,8 +72,16 @@ def duration_seconds(value):
         return None
 
 
-def duration_tolerance(expected, relaxed=False):
-    """Allow small encoding differences, and modest video intros on strong matches."""
+def duration_tolerance(expected, relaxed=False, override=None):
+    """Use an explicit seconds limit, or the ordinary downloader's timing policy."""
+    if override is not None:
+        try:
+            seconds = float(override)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('Duration tolerance must be a finite, non-negative number of seconds.') from exc
+        if not math.isfinite(seconds) or seconds < 0:
+            raise ValueError('Duration tolerance must be a finite, non-negative number of seconds.')
+        return seconds
     if not expected:
         return None
     if expected < 30:
@@ -236,17 +244,18 @@ def evaluate(track, candidate, config=None, manual=False):
 
     expected = duration_seconds(getattr(track, 'duration', None))
     actual = duration_seconds(candidate.get('duration_seconds')) or duration_seconds(candidate.get('duration'))
-    limit = duration_tolerance(expected)
+    override = getattr(track, 'duration_tolerance', None)
+    limit = duration_tolerance(expected, override=override)
     duration_score = 0.65
     if expected and actual:
         delta = abs(expected - actual)
         if delta > limit:
-            loose_limit = duration_tolerance(expected, relaxed=True)
+            loose_limit = duration_tolerance(expected, relaxed=True, override=override)
             if (manual or (title_score >= 0.94 and artist_score >= 0.9)) and delta <= loose_limit:
                 limit = loose_limit
             else:
                 return None, 'duration mismatch ({:.1f}s vs {:.1f}s)'.format(actual, expected)
-        duration_score = 1.0 - 0.4 * min(1.0, delta / limit)
+        duration_score = 1.0 - 0.4 * min(1.0, delta / limit) if limit else 1.0
     elif not manual and (title_score < 0.9 or artist_score < 0.78):
         return None, 'missing duration requires stronger title/artist evidence'
     score = 0.55 * title_score + 0.30 * artist_score + 0.15 * duration_score

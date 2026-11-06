@@ -233,7 +233,8 @@ def assess_response(track, body, actual_duration, min_score=0.90):
             recording_duration = duration_seconds(recording.get('duration'))
             reference_duration = expected_duration or recording_duration
             duration_ok = (reference_duration is not None and
-                           abs(actual_duration - reference_duration) <= duration_tolerance(reference_duration, relaxed=True))
+                           abs(actual_duration - reference_duration) <= duration_tolerance(
+                               reference_duration, relaxed=True, override=getattr(track, 'duration_tolerance', None)))
             if relation == 'same':
                 if reference_duration is None:
                     relation = 'uncertain'  # A sampled fingerprint alone cannot rule out a full album/clip.

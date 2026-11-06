@@ -11,6 +11,11 @@ its measured duration with an independently matched catalog duration.
 | Clear duration mismatch | Report `mismatch`; with `--repair`, download and validate a replacement. Skip fingerprinting the original. |
 | No reliable expected duration, or duration cannot be measured | Report `unknown`, leave untouched, and skip verification/downloads. |
 
+The default tolerance is **10 seconds in either direction, for every track length**.
+Set `--duration-tolerance SECONDS` to choose another fixed limit, for example
+`--duration-tolerance 5` for ±5 seconds. The boundary is inclusive: exactly 10
+seconds passes at the default; anything more is a mismatch.
+
 Matching duration is treated as a practical presumption of correctness, not proof
 of audio identity. This deliberately leaves wrong songs of similar length
 undetected. Skipped files retain all bytes, tags, artwork, and Traktor data.
@@ -110,6 +115,8 @@ AcoustID responses are cached for seven days. Use `--rescan` to recheck previous
 accepted files and refresh fingerprint lookups. It does **not** enable full
 verification or downloads for matching durations. A duration-only result never
 satisfies a later request for full audio verification.
+Changing `--duration-tolerance` also rechecks saved verified/repaired results;
+an old checkpoint or repair journal cannot bypass the newly selected limit.
 `Ctrl+C` stops the run without undoing completed repairs.
 
 ### Optional full verification and temporary references
@@ -207,12 +214,21 @@ decision. Expected length must come from the independently matched catalog; it i
 never taken from the suspect file, its embedded duration tags, or the proposed
 YouTube replacement.
 
-The mismatch threshold allows modest intros/outros: for tracks at least 60 seconds,
-12% of expected duration, with an 8-second minimum and 30-second maximum. Other
-lengths use the existing ordinary tolerance (6%, clamped to 3–15 seconds; below
-30 seconds, 12% with a one-second minimum). For example, a 5-second clip or a
-one-hour upload cannot pass for a three-minute track. A small encoding difference
-does not trigger replacement. In default mode, a file within this tolerance is
+The default mismatch threshold is a fixed **±10 seconds**, independent of track
+length. It applies to short tracks, ordinary songs, and long mixes alike. Override
+it in seconds, including decimal values:
+
+```powershell
+python -m savify.library_audit "J:\DJing\Musiq" --repair --spotify --duration-tolerance 5
+```
+
+Keep your working `--ffmpeg-location` and optional `--fpcalc` arguments on that
+command. `--duration-tolerance 2.5` means ±2.5 seconds; `0` requires exact equality.
+Negative values, NaN, infinity, and non-numeric values are rejected. The selected
+limit appears in the startup log and each file's report. There is no automatic
+percentage allowance or longer-track relaxation in this library audit workflow.
+
+In default mode, a file within this tolerance is
 reported as `duration_match` with `verification=duration_only`; all further audio
 verification and downloads are skipped. Normal fingerprint verification continues
 only when `--full-verification` was explicitly supplied.
@@ -220,8 +236,12 @@ only when `--full-verification` was explicitly supplied.
 For duration-proven mismatches and direct reference checks, absent or incomplete
 recording metadata does not block a candidate if its inspected source has a strong title match (at least
 0.94), strong artist evidence (at least 0.90), and the requested version. Both its
-declared duration and downloaded audio duration must fit the **ordinary, tighter**
-duration tolerance. Album, label and track IDs are still not requirements.
+declared duration and downloaded audio duration must fit the **same configured,
+fixed duration tolerance**. Replacement search, downloaded-audio validation, and
+fingerprint duration checks all honor this setting; strong metadata and manual
+selections cannot widen it. Source-versus-download consistency checks remain
+separate from this expected-track duration limit. Album, label and track IDs are
+still not requirements.
 
 A fingerprint that identifies the replacement as wrong, conflicting recording
 links, lookup/network errors, or weak source metadata still rejects the candidate.
@@ -359,7 +379,7 @@ or `error`. Exit codes: 0 = completed with no unresolved encountered files;
 
 ## Validation
 
-The combined suite contains 220 tests. It uses synthetic audio and real FFmpeg,
+The combined suite contains 276 tests. It uses synthetic audio and real FFmpeg,
 Chromaprint, Mutagen, and yt-dlp conversion where applicable. AcoustID responses
 and repair downloads are simulated to test decision-making and failure handling
 without relying on an external catalog or modifying a real music collection.
@@ -374,6 +394,10 @@ Duration-only tests also cover exact and near matches, tolerance boundaries,
 missing/invalid expected duration, unreadable media, avoiding full-file hashing,
 retaining Traktor data, existing checkpoints, resuming interrupted repairs,
 concurrent edits, and opting into full verification after a duration-only pass.
+Fixed-tolerance tests cover the 10-second default across track lengths, custom
+and fractional limits, exact boundary and zero handling, invalid inputs,
+replacement search/validation, fingerprint duration checks, and rechecking
+saved acceptances and repair journals after tightening the tolerance.
 
 Live AcoustID lookup and live YouTube repair have not been validated with your
 application key or collection. Windows locking code is included; automated checks

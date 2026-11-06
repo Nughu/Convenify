@@ -36,12 +36,13 @@ def audio_files(root, state_dir, logger, on_error=None):
 class LibraryAuditor:
     def __init__(self, root, state, identifier, logger, repairer=None, catalog=None,
                  ffmpeg_location='ffmpeg', rescan=False, repair_unknown=False, reference_check=False,
-                 full_verification=False):
+                 full_verification=False, duration_tolerance_seconds=10.0):
         self.root, self.state, self.identifier, self.logger = Path(root), state, identifier, logger
         self.repairer, self.catalog = repairer, catalog
         self.ffmpeg_location, self.rescan, self.repair_unknown = ffmpeg_location, rescan, repair_unknown
         self.reference_check = reference_check
         self.full_verification = full_verification
+        self.duration_tolerance = duration_tolerance(None, override=duration_tolerance_seconds)
 
     def process(self, path):
         path = Path(path)
@@ -55,21 +56,21 @@ class LibraryAuditor:
                 digest = file_digest(path)
                 assert_unchanged(path, token, digest)
                 previous = self.state.cached_file(path, digest) if not self.rescan else None
-                if previous:
+                if previous and previous.get('duration_tolerance') == self.duration_tolerance:
                     return dict(previous, cached=True)
             snapshot = TagSnapshot.read(path)
             track = snapshot.intended_track()
             result.update(artist=' / '.join(track.artists), title=track.name, track_id=str(track.id))
             # Recover a crash after os.replace but before the file checkpoint.
             recovered = self.state.replacement_for(path, digest) if digest else None
-            if recovered and not self.rescan:
-                result.update(recovered, status='repaired', reason='Recovered previously validated replacement from the journal.')
-                self.state.record(path, digest, result)
-                return result
+            if recovered:
+                result.update(recovered)  # Keep the backup/source even when the tolerance changed.
             if self.catalog:
                 self.catalog.enrich(track)
             expected = duration_seconds(track.duration)
-            tolerance = duration_tolerance(expected, relaxed=True)
+            tolerance = self.duration_tolerance
+            # The same fixed limit follows replacement searches and validation.
+            track.duration_tolerance = tolerance
             duration_mismatch = False
             catalog_note = getattr(track, 'catalog_note', 'No independent catalog duration available.' if not expected else 'Independent catalog match.')
             result.update(expected_duration=expected, duration_tolerance=tolerance, catalog_note=catalog_note)
@@ -86,6 +87,15 @@ class LibraryAuditor:
                     identity = IdentityResult('mismatch',
                         'Duration {:.1f}s differs from independently matched {:.1f}s by more than {:.1f}s.'.format(
                             duration, expected, tolerance), duration=duration)
+                elif recovered and not self.rescan and (expected or self.full_verification):
+                    # A journal proves a prior installation, not compliance with
+                    # today's tolerance. Recover only after checking its length.
+                    assert_unchanged(path, token, digest)
+                    result.update(status='repaired', duration=duration,
+                                  reason='Recovered previously validated replacement from the journal; current duration tolerance satisfied.'
+                                  if expected else 'Recovered previously validated replacement from the journal.')
+                    self.state.record(path, digest, result)
+                    return result
                 elif not self.full_verification:
                     if expected:
                         identity = IdentityResult('duration_match',
@@ -187,6 +197,9 @@ def parser():
         'Default: audit only. --repair backs up and replaces clear duration mismatches.'))
     result.add_argument('directory', type=Path, help='Music directory; includes all subdirectories.')
     result.add_argument('--repair', action='store_true', help='Install validated replacements at the original paths.')
+    result.add_argument('--duration-tolerance', type=duration_tolerance_argument, default=10.0, metavar='SECONDS', help=(
+        'Maximum absolute difference from expected duration for existing files and replacements '
+        '(default: 10 seconds, independent of track length). Accepts non-negative decimals; 0 requires an exact match.'))
     result.add_argument('--full-verification', action='store_true', help=(
         'Opt into fingerprint checks even when duration matches or is unavailable; '
         'with --repair, unknown files may trigger temporary reference downloads.'))
@@ -212,6 +225,13 @@ def parser():
     result.add_argument('--cookies', type=Path, help='Optional yt-dlp cookies.txt file.')
     result.add_argument('--verbose', action='store_true')
     return result
+
+
+def duration_tolerance_argument(value):
+    try:
+        return duration_tolerance(None, override=value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def main(argv=None):
@@ -251,6 +271,7 @@ def main(argv=None):
             identifier = AudioIdentifier(fingerprinter, client)
         logger.info('Audit mode: %s.', 'full audio verification' if args.full_verification else
                     'duration only; matching lengths skip audio verification and downloads')
+        logger.info('Duration tolerance: +/- %gs (fixed, independent of track length).', args.duration_tolerance)
         if args.repair:
             logger.info('Repair enabled. Close Traktor/tag editors. Originals will be backed up before replacement.')
             logger.info('Unknown-file reference comparison: %s.',
@@ -290,7 +311,8 @@ def main(argv=None):
                 auditor = LibraryAuditor(root, state, identifier, logger, repairer, catalog, args.ffmpeg_location,
                                          args.rescan, args.repair_unknown,
                                          reference_check=args.full_verification and not args.no_reference_check,
-                                         full_verification=args.full_verification)
+                                         full_verification=args.full_verification,
+                                         duration_tolerance_seconds=args.duration_tolerance)
                 counts = auditor.run(args.limit)
                 logger.info('Results: %s', json.dumps(dict(counts), sort_keys=True))
                 logger.info('Report: %s', state_dir / 'report.csv')
