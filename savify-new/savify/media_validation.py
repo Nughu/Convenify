@@ -6,7 +6,7 @@ import re
 import shutil
 import subprocess
 
-from .youtube_matcher import duration_seconds, duration_tolerance
+from .youtube_matcher import duration_range_error, duration_seconds, duration_tolerance
 
 
 class AudioValidationError(Exception):
@@ -64,6 +64,9 @@ def probe_audio(path, ffmpeg_location='ffmpeg'):
 
 def validate_audio(path, track, match=None, ffmpeg_location='ffmpeg', decode=True):
     actual = probe_audio(path, ffmpeg_location)
+    range_error = duration_range_error(actual, getattr(track, 'min_duration', None), getattr(track, 'max_duration', None))
+    if range_error:
+        raise AudioValidationError(range_error)
     expected = duration_seconds(getattr(track, 'duration', None))
     override = getattr(track, 'duration_tolerance', None)
     limit = (duration_tolerance(expected, override=override) if override is not None else

@@ -107,6 +107,7 @@ class AuditState:
         temporary = target.with_suffix('.csv.tmp')
         keys = ['path', 'status', 'artist', 'title', 'track_id', 'reason', 'duration',
                 'original_duration', 'expected_duration', 'duration_tolerance', 'repair_trigger',
+                'min_duration', 'max_duration', 'selection_source',
                 'catalog_note', 'verification', 'score', 'identified_as', 'backup', 'source_url', 'discarded_tags']
         with temporary.open('w', encoding='utf-8-sig', newline='') as out:
             writer = csv.DictWriter(out, fieldnames=keys, extrasaction='ignore')

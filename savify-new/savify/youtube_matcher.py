@@ -92,6 +92,16 @@ def duration_tolerance(expected, relaxed=False, override=None):
     return max(3.0, min(15.0, expected * 0.06))
 
 
+def duration_range_error(actual, minimum=None, maximum=None):
+    """Bounds are inclusive and absolute; duration tolerance does not widen them."""
+    if actual is not None:
+        if minimum is not None and actual < minimum:
+            return 'duration outside allowed range ({:.1f}s; minimum {:.1f}s)'.format(actual, minimum)
+        if maximum is not None and actual > maximum:
+            return 'duration outside allowed range ({:.1f}s; maximum {:.1f}s)'.format(actual, maximum)
+    return ''
+
+
 def youtube_url(value):
     """Canonicalize only individual YouTube videos, never arbitrary URLs/playlists."""
     value = str(value or '').strip()
@@ -367,6 +377,9 @@ def evaluate(track, candidate, config=None, manual=False):
 
     expected = duration_seconds(getattr(track, 'duration', None))
     actual = duration_seconds(candidate.get('duration_seconds')) or duration_seconds(candidate.get('duration'))
+    range_error = duration_range_error(actual, getattr(track, 'min_duration', None), getattr(track, 'max_duration', None))
+    if range_error:
+        return None, range_error
     override = getattr(track, 'duration_tolerance', None)
     limit = duration_tolerance(expected, override=override)
     duration_score = 0.65
@@ -589,7 +602,7 @@ class YouTubeMatcher:
             # Missing artist/duration fields may be recovered from the video page.
             provisional = _title_score(track, item)
             if not manual and not decision and (provisional < self.config.min_title or
-                    reason.startswith(('duration mismatch', 'live or upcoming', 'multi-track', 'different'))):
+                    reason.startswith(('duration mismatch', 'duration outside', 'live or upcoming', 'multi-track', 'different'))):
                 self._reject(track, item, url, reason, rejections)
                 continue
             priority = decision.score if decision else provisional * 0.8

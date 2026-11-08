@@ -1,10 +1,13 @@
 #Requires -Version 5.1
 <#
 Run through ..\Repair-Library.bat, or invoke this script in PowerShell.
+Use ..\Repair-Library-NML.bat or -NmlMode to select an exported Traktor NML file.
 The supplied Python installation must already contain Savify and its dependencies.
 #>
 [CmdletBinding()]
-param()
+param(
+    [switch]$NmlMode
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -255,10 +258,35 @@ try {
     # Match the original command's working directory, regardless of how launched.
     Push-Location -LiteralPath $projectRoot
     $locationPushed = $true
-    Write-Host 'Savify library repair' -ForegroundColor Cyan
+    if ($NmlMode) {
+        Write-Host 'Savify NML playlist repair' -ForegroundColor Cyan
+    }
+    else {
+        Write-Host 'Savify library repair' -ForegroundColor Cyan
+    }
     Write-Host "Python: $python"
     Write-Host 'Relative paths are resolved from the folder containing Repair-Library.bat.'
     Write-Host ''
+
+    $nmlPath = $null
+    if ($NmlMode) {
+        Write-Host 'Select an NML export that references the original music files.'
+        while ($true) {
+            try {
+                $nmlPath = Resolve-UserPath -Text (Read-Host 'Path to the exported Traktor NML file')
+                if (-not (Test-Path -LiteralPath $nmlPath -PathType Leaf)) {
+                    throw 'The NML path must be an existing file.'
+                }
+                if ([IO.Path]::GetExtension($nmlPath) -ine '.nml') {
+                    throw 'Select a Traktor playlist export with the .nml extension.'
+                }
+                break
+            }
+            catch { Write-Warning $_.Exception.Message }
+        }
+        Write-Host 'The music library folder must contain all tracks listed in this NML export.'
+        Write-Host ''
+    }
 
     while ($true) {
         try {
@@ -288,23 +316,34 @@ try {
     Set-AcoustIdKey
     # Keep subprocesses using the same FFmpeg; do not change the saved user PATH.
     $env:PATH = $ffmpegDirectory + [IO.Path]::PathSeparator + $originalPath
+    $auditArguments = @(
+        '-m', 'savify.library_audit', $library,
+        '--repair', '--spotify',
+        '--ffmpeg-location', $ffmpegDirectory,
+        '--duration-tolerance', '5',
+        '--min-duration', '60',
+        '--max-duration', '600'
+    )
+    if ($NmlMode) {
+        $auditArguments += @('--nml', $nmlPath)
+    }
     Write-Host ''
     Write-Host "Library: $library"
     Write-Host "FFmpeg:  $ffmpegDirectory"
-    Write-Host 'Options: --repair --spotify --duration-tolerance 9'
-    Write-Host 'Repair can replace files in the selected music library.' -ForegroundColor Yellow
+    Write-Host ('Options: ' + ($auditArguments[3..($auditArguments.Count - 1)] -join ' '))
+    if ($NmlMode) {
+        Write-Host "NML:     $nmlPath"
+        Write-Host 'Repair can replace only the NML-listed tracks in the selected music library.' -ForegroundColor Yellow
+    }
+    else {
+        Write-Host 'Repair can replace files in the selected music library.' -ForegroundColor Yellow
+    }
     $confirmed = (Read-Host 'Have you backed up this library? Type YES to start repair; anything else cancels').Trim()
     if ($confirmed -ine 'YES') {
         Write-Host 'Cancelled. No library repair was started.'
         $exitCode = 0
     }
     else {
-        $auditArguments = @(
-            '-m', 'savify.library_audit', $library,
-            '--repair', '--spotify',
-            '--ffmpeg-location', $ffmpegDirectory,
-            '--duration-tolerance', '5'
-        )
         Write-Host ''
         Write-Host 'Starting Savify library repair...' -ForegroundColor Cyan
         # Use the call operator and an argument array; do not build a command string.

@@ -11,7 +11,8 @@ from uuid import uuid4
 from .audio_download import download_candidate
 from .audio_identity import IdentityConfigurationError
 from .media_validation import _run, ffmpeg_binary, validate_audio
-from .youtube_matcher import NoReliableMatch, _clean_title, _remix_evidence, _versions, duration_seconds, duration_tolerance
+from .youtube_matcher import (NoReliableMatch, _clean_title, _remix_evidence, _versions,
+                              duration_range_error, duration_seconds, duration_tolerance)
 
 
 class RepairError(Exception):
@@ -57,20 +58,28 @@ def remux_clean(source, output, ffmpeg_location='ffmpeg'):
     _run(command + [str(output)], timeout=600)
 
 
-def metadata_duration_match(track, match, actual_duration):
+def metadata_duration_match(track, match, actual_duration, allow_source_duration=False):
     """Stronger core metadata/length evidence when no fingerprint is recognized.
 
     Album/label/IDs are deliberately absent. Manual selections may bypass the
     normal search gates, so they still require positive fingerprint verification.
+    Explicit NML/range requests may use the independently inspected source length
+    when no catalog duration is available; the broken original is never a target.
     """
     expected = duration_seconds(getattr(track, 'duration', None))
     source_duration = duration_seconds(match.duration)
-    if not expected or not source_duration or match.manual:
+    if not source_duration or match.manual:
         return False
+    if not expected:
+        if not allow_source_duration:
+            return False
+        expected = source_duration
     limit = duration_tolerance(expected, override=getattr(track, 'duration_tolerance', None))
     return (match.title_score >= 0.94 and match.artist_score >= 0.90
             and _versions(track.name) == _versions(_clean_title(match.title, track.artists))
             and not _remix_evidence(track, {'title': match.title})['reason']
+            and not duration_range_error(actual_duration, getattr(track, 'min_duration', None), getattr(track, 'max_duration', None))
+            and not duration_range_error(source_duration, getattr(track, 'min_duration', None), getattr(track, 'max_duration', None))
             and abs(actual_duration - expected) <= limit
             and abs(source_duration - expected) <= limit)
 
@@ -83,8 +92,11 @@ class LibraryRepairer:
         self.ffmpeg_location, self.options = ffmpeg_location, options or {}
         self.max_candidates, self.downloader = max_candidates, downloader
 
-    def repair(self, path, snapshot, track, token, digest, duration_mismatch=False, verify_existing=False):
+    def repair(self, path, snapshot, track, token, digest, duration_mismatch=False, verify_existing=False,
+               force_redownload=False):
         path = Path(path)
+        if force_redownload:
+            verify_existing = False
         download_format = {'.ogg': 'vorbis', '.mp4': 'm4a', '.aif': 'wav', '.aiff': 'wav'}.get(
             path.suffix.lower(), path.suffix.lower()[1:])
         errors, attempts = [], 0
@@ -108,12 +120,15 @@ class LibraryRepairer:
                         identity = self.identifier.identify(staging, track, duration)
                         self.state.log_event('candidate_identity', path=str(path), source_url=match.url,
                                              title=match.title, identity=identity.to_dict())
-                        duration_fallback = ((duration_mismatch or verify_existing) and identity.status == 'unknown'
+                        duration_fallback = ((duration_mismatch or verify_existing or force_redownload) and identity.status == 'unknown'
                                              and (identity.unrecognized or identity.incomplete)
-                                             and metadata_duration_match(track, match, duration))
+                                             and metadata_duration_match(track, match, duration,
+                                                                         allow_source_duration=force_redownload))
                         if identity.status != 'verified' and not duration_fallback:
                             raise RepairError('Replacement identity is {}: {}'.format(identity.status, identity.reason))
                         verification = 'metadata_duration' if duration_fallback else 'fingerprint'
+                        if duration_fallback and not duration_seconds(getattr(track, 'duration', None)):
+                            verification = 'metadata_source_duration'
                         comparison = None
                         if verify_existing:
                             comparison = self.identifier.compare(path, staging)
@@ -153,6 +168,9 @@ class LibraryRepairer:
                     self.matcher.store.remember(track, match, duration)
                     reason = ('Replacement matched artist/title/version and expected duration; database identity incomplete or unrecognized.'
                               if duration_fallback else 'Fingerprint-verified replacement installed; original backed up.')
+                    if verification == 'metadata_source_duration':
+                        reason = ('Requested replacement matched artist/title/version, inspected source duration and configured bounds; '
+                                  'no independent expected duration was available; original backed up.')
                     return {'status': 'repaired', 'reason': reason, 'verification': verification,
                             'digest': new_digest, 'duration': duration, 'score': identity.score,
                             'backup': str(backup), 'source_url': match.url,
