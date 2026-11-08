@@ -5,7 +5,8 @@ Use ..\Repair-Library-NML.bat or -NmlMode to replace all files in a Traktor NML 
 NML mode does not ask for a library path or verify the existing audio.
 After repair, optionally reset this run's repaired tracks in Traktor (default Yes).
 Keep traktor_reset_repaired.py in this script's directory.
-The supplied Python installation must already contain Savify and its dependencies.
+Keep run_savify_audit.py here too; it loads ..\savify-new\savify explicitly.
+The supplied Python installation must already contain Savify's dependencies.
 #>
 [CmdletBinding()]
 param(
@@ -314,7 +315,16 @@ try {
     if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
         throw "Python was not found at: $python"
     }
-    # Match the original command's working directory, regardless of how launched.
+    $auditRunner = Join-Path $PSScriptRoot 'run_savify_audit.py'
+    if (-not (Test-Path -LiteralPath $auditRunner -PathType Leaf)) {
+        throw "Savify launch helper was not found at: $auditRunner"
+    }
+    $savifySource = Join-Path $projectRoot 'savify-new\savify\library_audit.py'
+    if (-not (Test-Path -LiteralPath $savifySource -PathType Leaf)) {
+        throw "Savify source was not found at: $savifySource"
+    }
+    # Resolve user-entered relative paths from Convenify, regardless of how launched.
+    # The Python helper selects savify-new explicitly, independent of this directory.
     Push-Location -LiteralPath $projectRoot
     $locationPushed = $true
     if ($NmlMode) {
@@ -324,6 +334,7 @@ try {
         Write-Host 'Savify library repair' -ForegroundColor Cyan
     }
     Write-Host "Python: $python"
+    Write-Host "Savify: $savifySource"
     Write-Host 'Relative paths are resolved from the folder containing Repair-Library.bat.'
     Write-Host ''
 
@@ -378,16 +389,16 @@ try {
     $env:PATH = $ffmpegDirectory + [IO.Path]::PathSeparator + $originalPath
     if ($NmlMode) {
         $auditArguments = @(
-            '-m', 'savify.library_audit',
+            $auditRunner,
             '--nml', $nmlPath, '--spotify',
             '--ffmpeg-location', $ffmpegDirectory,
-            '--duration-tolerance', '8'
+            '--duration-tolerance', '5'
         )
         $confirmationPrompt = 'Have you backed up the NML-listed files? Type YES to start replacement; anything else cancels'
     }
     else {
         $auditArguments = @(
-            '-m', 'savify.library_audit', $library,
+            $auditRunner, $library,
             '--repair', '--spotify',
             '--ffmpeg-location', $ffmpegDirectory,
             '--duration-tolerance', '8',
