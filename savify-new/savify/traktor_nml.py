@@ -49,8 +49,17 @@ def path_key(value):
     return os.path.normcase(os.path.normpath(text))
 
 
-def read_nml_paths(filename):
-    """Prefer explicit playlist members over a potentially larger COLLECTION."""
+STEM_REPAIR_REASON = (
+    'Stem audio requires regenerated separated parts; this downloader produces ordinary audio only. '
+    'Original Stem file left unchanged. Repair the original song and regenerate its Stems separately.')
+
+
+def is_stem_path(path):
+    return str(path).casefold().endswith(('.stem.m4a', '.stem.mp4'))
+
+
+def read_nml_paths(filename, skipped=None):
+    """Select playlist members; report Stem files without aborting normal tracks."""
     try:
         document = ET.parse(filename)
     except (ET.ParseError, OSError) as exc:
@@ -60,15 +69,33 @@ def read_nml_paths(filename):
         element.tag = element.tag.rsplit('}', 1)[-1]
     if root.tag != 'NML':
         raise ValueError('Expected a Traktor NML document.')
+    stem_paths = set()
+    for entry in root.findall('./COLLECTION/ENTRY'):
+        if entry.find('STEMS') is not None:
+            location = entry.find('LOCATION')
+            if location is not None:
+                try:
+                    stem_paths.add(path_key(location_path(location)))
+                except ValueError:
+                    # Unselected collection metadata must not broaden or block
+                    # an otherwise explicit playlist selection.
+                    pass
     playlists = list(root.iter('PLAYLIST'))
     if playlists:
         paths = []
         for playlist in playlists:
             for entry in playlist.findall('ENTRY'):
-                key = entry.find('PRIMARYKEY')
-                if key is None or (key.get('TYPE') or 'TRACK').upper() != 'TRACK':
-                    raise ValueError('NML playlist contains an unsupported entry without a local TRACK key.')
-                paths.append(decode_path(key.get('KEY')))
+                keys = entry.findall('PRIMARYKEY')
+                if len(keys) != 1:
+                    raise ValueError('NML playlist entry must contain exactly one local PRIMARYKEY.')
+                key = keys[0]
+                kind = (key.get('TYPE') or 'TRACK').strip().upper()
+                if kind not in ('TRACK', 'STEM'):
+                    raise ValueError('NML playlist contains unsupported PRIMARYKEY TYPE={!r}; expected TRACK or STEM.'.format(kind))
+                path = decode_path(key.get('KEY'))
+                paths.append(path)
+                if kind == 'STEM':
+                    stem_paths.add(path_key(path))
     elif any(node.get('TYPE') == 'SMARTLIST' for node in root.iter('NODE')):
         raise ValueError('NML contains a smart-list rule without exported members. Export the smart list as a track playlist.')
     else:
@@ -83,14 +110,21 @@ def read_nml_paths(filename):
         unique.setdefault(path_key(path), path)
     if not unique:
         raise ValueError('NML export contains no explicit track paths; no files were selected.')
-    return list(unique.values())
+    selected = []
+    for key, path in unique.items():
+        if key in stem_paths or is_stem_path(path):
+            if skipped is not None:
+                skipped.append({'path': path, 'status': 'unsupported', 'reason': STEM_REPAIR_REASON})
+        else:
+            selected.append(path)
+    return selected
 
 
-def selected_paths(filename, state_dir, extensions):
+def selected_paths(filename, state_dir, extensions, skipped=None):
     """Use the export's exact absolute paths, including different music drives."""
     state_dir = Path(state_dir).resolve()
     selected = {}
-    for value in read_nml_paths(filename):
+    for value in read_nml_paths(filename, skipped=skipped):
         path = Path(value)
         if not path.is_absolute():
             raise ValueError('NML path cannot be used on this operating system: {}'.format(value))

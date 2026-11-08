@@ -226,11 +226,12 @@ class NMLRepairRunner:
     target needs repair. Only newly downloaded audio goes through validation.
     """
     def __init__(self, paths, state, repairer, logger, catalog=None,
-                 duration_tolerance_seconds=10.0, min_duration=None, max_duration=None):
+                 duration_tolerance_seconds=10.0, min_duration=None, max_duration=None, skipped=None):
         self.paths = tuple(paths)
-        if not self.paths:
+        self.skipped = tuple(skipped or ())
+        if not self.paths and not self.skipped:
             raise ValueError('NML selection is empty; no files were selected.')
-        if repairer is None:
+        if self.paths and repairer is None:
             raise ValueError('NML mode requires a replacement downloader.')
         self.state, self.repairer, self.logger, self.catalog = state, repairer, logger, catalog
         self.duration_tolerance = duration_tolerance(None, override=duration_tolerance_seconds)
@@ -286,6 +287,12 @@ class NMLRepairRunner:
 
     def run(self, limit=None):
         counts = Counter()
+        for item in self.skipped:
+            result = dict(item, selection_source='nml', repair_trigger='nml_selection',
+                          original_verification='skipped_nml')
+            self.state.record(result['path'], '', result)
+            counts[result['status']] += 1
+            self.logger.warning('  Skipping %s: %s', result['path'], result['reason'])
         for index, path in enumerate(self.paths, 1):
             if limit is not None and index > limit:
                 break
@@ -313,7 +320,8 @@ def parser():
         'Seconds or MM:SS / HH:MM:SS. Upper bound also applies to replacements.'))
     result.add_argument('--nml', type=Path, metavar='FILE', help=(
         'Direct replacement mode: re-download every explicitly listed track at its original path. '
-        'Implies --repair; no directory, existing-audio verification or successful-checkpoint skips.'))
+        'Implies --repair; no directory, existing-audio verification or successful-checkpoint skips. '
+        'Stem files are reported as unsupported and left intact while ordinary tracks continue.'))
     result.add_argument('--duration-tolerance', type=duration_tolerance_argument, default=10.0, metavar='SECONDS', help=(
         'Maximum absolute difference from expected duration for existing files and replacements '
         '(default: 10 seconds, independent of track length). Accepts non-negative decimals; 0 requires an exact match.'))
@@ -398,18 +406,20 @@ def main(argv=None):
     if args.cookies and not args.cookies.is_file():
         command.error('--cookies must point to an existing file')
     has_spotify_credentials = all(os.environ.get(name) for name in ('SPOTIPY_CLIENT_ID', 'SPOTIPY_CLIENT_SECRET'))
-    if args.spotify and not has_spotify_credentials:
-        command.error('--spotify requires SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET')
-    use_spotify = has_spotify_credentials if args.spotify is None else args.spotify
     state_dir = args.state_dir.expanduser().resolve() if args.state_dir else default_state_dir
     if root is not None and (state_dir == root or state_dir in root.parents):
         command.error('--state-dir must be a separate directory, not the music root or its parent')
     nml_paths = None
+    nml_skipped = []
     if args.nml:
         try:
-            nml_paths = selected_paths(args.nml, state_dir, SUPPORTED_EXTENSIONS)
+            nml_paths = selected_paths(args.nml, state_dir, SUPPORTED_EXTENSIONS, skipped=nml_skipped)
         except ValueError as exc:
             command.error(str(exc))
+    has_targets = nml_paths is None or bool(nml_paths)
+    if has_targets and args.spotify and not has_spotify_credentials:
+        command.error('--spotify requires SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET')
+    use_spotify = has_targets and (has_spotify_credentials if args.spotify is None else args.spotify)
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     logger = logging.getLogger('savify.audit')
     logger.setLevel(logging.DEBUG)
@@ -417,9 +427,10 @@ def main(argv=None):
         if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
             handler.setLevel(logging.DEBUG if args.verbose else logging.INFO)
     try:
-        _run([ffmpeg_binary(args.ffmpeg_location), '-version'], timeout=15)
+        if has_targets:
+            _run([ffmpeg_binary(args.ffmpeg_location), '-version'], timeout=15)
         identifier, client = None, None
-        if args.repair or args.full_verification:
+        if has_targets and (args.repair or args.full_verification):
             fingerprinter = Fingerprinter(args.ffmpeg_location, args.fpcalc)
             fingerprinter.check()
             client = AcoustIDClient(os.environ.get('ACOUSTID_API_KEY'))
@@ -433,8 +444,8 @@ def main(argv=None):
                         args.min_duration if args.min_duration is not None else 'no minimum',
                         args.max_duration if args.max_duration is not None else 'no maximum')
         if nml_paths is not None:
-            logger.info('NML selection: %s unique track(s) from %s; every listed track is requested for a fresh download.',
-                        len(nml_paths), args.nml)
+            logger.info('NML selection: %s ordinary track(s) for fresh download; %s unsupported Stem file(s) left intact; source: %s.',
+                        len(nml_paths), len(nml_skipped), args.nml)
         if args.repair:
             logger.info('Repair enabled. Close Traktor/tag editors. Originals will be backed up before replacement.')
             if nml_paths is None:
@@ -462,7 +473,7 @@ def main(argv=None):
                     catalog = CatalogResolver(Spotify(auth_manager=SpotifyClientCredentials(cache_handler=MemoryCacheHandler()),
                                                       requests_timeout=20, retries=2, status_retries=2), state, logger)
                 repairer = None
-                if args.repair:
+                if args.repair and has_targets:
                     options = {'quiet': True, 'socket_timeout': 30, 'retries': 3, 'fragment_retries': 3,
                                'sleep_interval': 5, 'max_sleep_interval': 10, 'sleep_interval_requests': 1}
                     if args.cookies:
@@ -475,7 +486,8 @@ def main(argv=None):
                 if nml_paths is not None:
                     runner = NMLRepairRunner(nml_paths, state, repairer, logger, catalog,
                                               duration_tolerance_seconds=args.duration_tolerance,
-                                              min_duration=args.min_duration, max_duration=args.max_duration)
+                                              min_duration=args.min_duration, max_duration=args.max_duration,
+                                              skipped=nml_skipped)
                 else:
                     runner = LibraryAuditor(root, state, identifier, logger, repairer, catalog, args.ffmpeg_location,
                                              args.rescan, args.repair_unknown,
@@ -491,7 +503,7 @@ def main(argv=None):
                                  state.run_log_error)
                     return 2
                 return 1 if any(counts[status] for status in (
-                    'unknown', 'mismatch', 'corrupt', 'repair_failed', 'error', 'outside_duration_range')) else 0
+                    'unknown', 'mismatch', 'corrupt', 'repair_failed', 'error', 'outside_duration_range', 'unsupported')) else 0
             finally:
                 try:
                     state.export_report()

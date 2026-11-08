@@ -11,6 +11,7 @@ from uuid import uuid4
 from .audio_download import download_candidate
 from .audio_identity import IdentityConfigurationError
 from .media_validation import _run, ffmpeg_binary, validate_audio
+from .traktor_nml import is_stem_path, STEM_REPAIR_REASON
 from .youtube_matcher import (NoReliableMatch, _clean_title, _remix_evidence, _versions,
                               duration_range_error, duration_seconds, duration_tolerance)
 
@@ -96,6 +97,8 @@ class LibraryRepairer:
     def repair(self, path, snapshot, track, token, digest, duration_mismatch=False, verify_existing=False,
                force_redownload=False):
         path = Path(path)
+        if is_stem_path(path):
+            raise RepairError(STEM_REPAIR_REASON)
         if force_redownload:
             verify_existing = False
         download_format = {'.ogg': 'vorbis', '.mp4': 'm4a', '.aif': 'wav', '.aiff': 'wav'}.get(

@@ -354,7 +354,7 @@ try {
             }
             catch { Write-Warning $_.Exception.Message }
         }
-        Write-Host 'Every listed file is selected for replacement. Existing audio will not be verified.'
+        Write-Host 'Every ordinary track is selected for replacement. Stem files are reported separately; existing audio will not be verified.'
         Write-Host ''
     }
     else {
@@ -392,7 +392,7 @@ try {
             $auditRunner,
             '--nml', $nmlPath, '--spotify',
             '--ffmpeg-location', $ffmpegDirectory,
-            '--duration-tolerance', '5'
+            '--duration-tolerance', '8'
         )
         $confirmationPrompt = 'Have you backed up the NML-listed files? Type YES to start replacement; anything else cancels'
     }
@@ -417,7 +417,7 @@ try {
     Write-Host ('Arguments: ' + ($auditArguments -join ' '))
     if ($NmlMode) {
         Write-Host "NML:     $nmlPath"
-        Write-Host 'Re-download and replace every NML-listed file at its original path. No library scan or existing-audio checks.' -ForegroundColor Yellow
+        Write-Host 'Re-download NML-listed ordinary tracks at their original paths. Stem files stay intact. No library scan or existing-audio checks.' -ForegroundColor Yellow
     }
     else {
         Write-Host "Library: $library"
