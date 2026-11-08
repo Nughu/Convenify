@@ -291,7 +291,7 @@ try {
     Write-Host ''
     Write-Host "Library: $library"
     Write-Host "FFmpeg:  $ffmpegDirectory"
-    Write-Host 'Options: --repair --spotify --duration-tolerance 5'
+    Write-Host 'Options: --repair --spotify --duration-tolerance 9'
     Write-Host 'Repair can replace files in the selected music library.' -ForegroundColor Yellow
     $confirmed = (Read-Host 'Have you backed up this library? Type YES to start repair; anything else cancels').Trim()
     if ($confirmed -ine 'YES') {
