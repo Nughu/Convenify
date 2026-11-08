@@ -14,7 +14,7 @@ import time
 import requests
 
 from .media_validation import AudioValidationError, _run, ffmpeg_binary, probe_audio
-from .youtube_matcher import (_artist_score, _clean_title, _versions, duration_seconds,
+from .youtube_matcher import (_artist_score, _clean_title, _remix_evidence, _versions, duration_seconds,
                               duration_tolerance, similarity)
 
 
@@ -172,14 +172,18 @@ def recording_relation(track, recording):
                if isinstance(artist, dict) and isinstance(artist.get('name'), str) and artist.get('name', '').strip()]
     if not title or not artists:
         return 'uncertain'
+    candidate = {'title': title, 'artists': artists}
+    remix = _remix_evidence(track, candidate)
+    if remix['status'] == 'different':
+        return 'different'
     title_score = similarity(_clean_title(track.name), _clean_title(title))
-    # Older Savify tags joined artists with '/', including names such as AC/DC.
-    # Compare complete credits too; never split every slash into a new artist.
-    artist_score = _artist_score(track, {'artists': artists + [' / '.join(artists)]})
+    # Include version-title credits: a catalog may list only the original
+    # performer in its artists field and the remixer in the recording title.
+    artist_score = _artist_score(track, candidate, allow_title_artist=False)
     # Mild spelling/credit differences need review, not automatic replacement.
     if artist_score < 0.50:
         return 'different'
-    if _missing_version(track, title):
+    if _missing_version(track, title) or remix['status'] == 'uncertain':
         return 'uncertain'
     if title_score < 0.60:
         return 'different'
@@ -226,7 +230,8 @@ def assess_response(track, body, actual_duration, min_score=0.90):
                             or recording.get('artists') and any(a.get('name') for a in recording['artists'] if isinstance(a, dict))
                             and _artist_score(track, {'artists': recording['artists']}) < .50):
                         issue = 'conflicting partial metadata'
-                elif _missing_version(track, recording.get('title')):
+                elif (_missing_version(track, recording.get('title'))
+                      or _remix_evidence(track, recording)['status'] == 'uncertain'):
                     issue = 'missing requested version'
                 else:
                     issue = 'artist/title/version uncertain'

@@ -3,7 +3,7 @@ import hashlib
 import json
 
 from .audio_identity import recording_relation
-from .youtube_matcher import duration_seconds, duration_tolerance, normalize, similarity
+from .youtube_matcher import _named_remixes, duration_seconds, duration_tolerance, normalize, similarity
 
 
 class CatalogResolver:
@@ -13,7 +13,10 @@ class CatalogResolver:
     def enrich(self, track):
         identity = [getattr(track, 'catalog_id', None), track.name, track.artists, track.album_name, track.isrc]
         key = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
-        stored = self.cache.cache_get('spotify-v2', key, 30 * 86400)
+        # Older cached durations did not distinguish the names of remixers.
+        # Refresh only named-remix catalog lookups, leaving other caches intact.
+        cache_kind = 'spotify-named-remix-v1' if _named_remixes(track.name) else 'spotify-v2'
+        stored = self.cache.cache_get(cache_kind, key, 30 * 86400)
         if stored is not None:
             return self._apply(track, stored)
         try:
@@ -44,7 +47,7 @@ class CatalogResolver:
                 chosen = suitable[0]
                 data = {'duration': duration_seconds(chosen['duration_ms']) / 1000,
                         'isrc': (chosen.get('external_ids') or {}).get('isrc'), 'id': chosen.get('id')}
-                self.cache.cache_put('spotify-v2', key, data)
+                self.cache.cache_put(cache_kind, key, data)
                 return self._apply(track, data)
             track.catalog_note = 'No reliable Spotify artist/title/version match found.'
         except Exception as exc:

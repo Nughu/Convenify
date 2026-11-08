@@ -11,7 +11,7 @@ from uuid import uuid4
 from .audio_download import download_candidate
 from .audio_identity import IdentityConfigurationError
 from .media_validation import _run, ffmpeg_binary, validate_audio
-from .youtube_matcher import NoReliableMatch, _clean_title, _versions, duration_seconds, duration_tolerance
+from .youtube_matcher import NoReliableMatch, _clean_title, _remix_evidence, _versions, duration_seconds, duration_tolerance
 
 
 class RepairError(Exception):
@@ -70,6 +70,7 @@ def metadata_duration_match(track, match, actual_duration):
     limit = duration_tolerance(expected, override=getattr(track, 'duration_tolerance', None))
     return (match.title_score >= 0.94 and match.artist_score >= 0.90
             and _versions(track.name) == _versions(_clean_title(match.title, track.artists))
+            and not _remix_evidence(track, {'title': match.title})['reason']
             and abs(actual_duration - expected) <= limit
             and abs(source_duration - expected) <= limit)
 

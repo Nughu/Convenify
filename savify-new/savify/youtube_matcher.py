@@ -3,6 +3,7 @@
 Album, label, ISRC and channel verification are NEVER required for a match.
 Search result position and popularity are deliberately not confidence signals.
 """
+from collections import Counter
 from dataclasses import asdict, dataclass
 from difflib import SequenceMatcher
 import json
@@ -175,7 +176,97 @@ def _versions(value):
     return flags
 
 
-def _artist_score(track, candidate):
+def _remix_label(value):
+    """Extract a named remix credit from one version annotation."""
+    text = str(value or '').strip().replace('\u2019', "'")
+    match = re.fullmatch(r'(.+?)\s+remix(?:\s+(?:radio edit|extended(?: mix)?|edit|version))?', text, re.I)
+    if match is None:
+        match = re.fullmatch(r'remix(?:ed)?\s+by\s+(.+)', text, re.I)
+    if match is None:
+        return ''
+    name = re.sub(r"(?:'s|')$", '', match.group(1).strip(), flags=re.I)
+    name = normalize(name)
+    # These describe an edition, not a named remixer. Do not demand a person
+    # called "Extended" when a track is labelled "Extended Remix".
+    generic = {'the', 'a', 'official', 'original', 'extended', 'radio', 'club',
+               'dub', 'vocal', 'instrumental', 'radio edit', 'club version'}
+    return '' if name in generic else name
+
+
+def _named_remixes(value, base_title=''):
+    """Use bounded version labels; the whole song title is never a remixer."""
+    text = str(value or '')
+    labels = re.findall(r'[\(\[]([^()\[\]]+)[\)\]]', text)
+    parts = re.split(r'\s+[-\u2013\u2014]\s+', text)
+    if len(parts) > 1:
+        labels.append(parts[-1])
+    names = {_remix_label(label) for label in labels} - {''}
+    # YouTube sometimes drops brackets: "Song Name DJ Name Remix". The known
+    # base title supplies the boundary; do not guess a name from any song suffix.
+    if not names and base_title:
+        cleaned = _clean_title(text)
+        if _contains(base_title, cleaned):
+            suffix = cleaned.split(base_title, 1)[1].strip()
+            name = _remix_label(suffix)
+            if name:
+                names.add(name)
+    return names
+
+
+def _remix_base_title(value):
+    text = re.sub(r'[\(\[]([^()\[\]]+)[\)\]]',
+                  lambda match: '' if _remix_label(match.group(1)) else match.group(0), str(value or ''))
+    parts = re.split(r'\s+[-\u2013\u2014]\s+', text)
+    if len(parts) > 1 and _remix_label(parts[-1]):
+        text = ' - '.join(parts[:-1])
+    return _clean_title(text)
+
+
+def _description_credits(candidate):
+    """Read role-labelled credits and an exact title/artist line, not keywords."""
+    artists, remixers = [], []
+    titles = {_clean_title(candidate.get(key)) for key in ('title', 'track')} - {''}
+    for line in str(candidate.get('description') or '')[:4000].splitlines():
+        credit = re.fullmatch(r'\s*(artists?|performed by|music by|remixer|remixed by)\s*:\s*(.+?)\s*', line, re.I)
+        if credit:
+            target = remixers if credit.group(1).casefold() in ('remixer', 'remixed by') else artists
+            target.append(credit.group(2))
+            continue
+        parts = re.split(r'\s+[\u00b7\u2022]\s+', line.strip())
+        if len(parts) > 1 and _clean_title(parts[0]) in titles:
+            artists.extend(part for part in parts[1:] if part.strip())
+    return list(dict.fromkeys(artists)), list(dict.fromkeys(remixers))
+
+
+def _remix_evidence(track, candidate):
+    """Keep named remix identity separate from fuzzy title/artist similarity."""
+    wanted = _named_remixes(track.name)
+    base = _remix_base_title(track.name) if wanted else ''
+    found = set().union(*(_named_remixes(candidate.get(key), base) for key in ('title', 'track')))
+    _, credits = _description_credits(candidate)
+    credit_names = list(dict.fromkeys(normalize(credit) for credit in credits))
+    credited = {' '.join(credit_names)} - {''}
+    status, reason = 'unspecified', ''
+    if wanted:
+        if found - wanted or credited - wanted:
+            status = 'different'
+            reason = 'different remix (expected: {}; found: {})'.format(
+                ', '.join(sorted(wanted)), ', '.join(sorted(found | credited)))
+        elif not wanted <= found | credited:
+            status = 'uncertain'
+            reason = 'unconfirmed requested remix ({})'.format(', '.join(sorted(wanted)))
+        else:
+            status = 'same'
+    return dict(status=status, reason=reason, requested_remixers=sorted(wanted),
+                title_remixers=sorted(found), credited_remixers=sorted(credited))
+
+
+def _title_score(track, candidate):
+    return max(similarity(_clean_title(track.name), _clean_title(candidate.get(key), track.artists))
+               for key in ('title', 'track'))
+
+
+def _artist_score(track, candidate, allow_title_artist=True):
     primary = normalize(track.artists[0]) if track.artists else ''
     if primary in ('', 'unknown artist', 'unknown publisher'):
         return 0.0
@@ -183,7 +274,14 @@ def _artist_score(track, candidate):
     if isinstance(structured, str):
         structured = [structured]
     names = [a.get('name', '') if isinstance(a, dict) else a for a in structured]
+    # Older Savify tags stored multiple artists as one slash-joined credit.
+    # Compare the complete structured credit too. Preserve literal slashes in
+    # names such as AC/DC; do not split the intended track's artist tags.
+    if len(names) > 1:
+        names.append(' / '.join(str(name) for name in names if name))
     names += [candidate.get('artist') or '', candidate.get('creator') or '']
+    credited_artists, _ = _description_credits(candidate)
+    names += credited_artists
     # Short artist names must match whole tokens (Air is not Hair).
     def name_similarity(name):
         text = normalize(name)
@@ -192,7 +290,29 @@ def _artist_score(track, candidate):
         return similarity(primary, text)
     scores = [name_similarity(n) for n in names if n]
     scores.extend(1.0 for name in names if _contains(primary, normalize(name)))
-    for value in [candidate.get('title'), candidate.get('channel'), candidate.get('uploader')]:
+    remix = _remix_evidence(track, candidate)
+    if remix['status'] == 'same':
+        # A remixer may appear only in the version title/description, while the
+        # performer is listed separately. Require the COMPLETE intended credit
+        # to match exactly before synthesizing artist evidence across those roles.
+        performers = list(names)
+        for key in ('channel', 'uploader'):
+            value = str(candidate.get(key) or '')
+            if re.search(r'\s*-\s*Topic$', value, re.I):
+                performers.append(re.sub(r'\s*-\s*Topic$', '', value, flags=re.I))
+        for key in ('title', 'track') if allow_title_artist else ():
+            parts = re.split(r'\s+[-\u2013\u2014]\s+', str(candidate.get(key) or ''), maxsplit=1)
+            if len(parts) > 1 and similarity(_clean_title(track.name), _clean_title(parts[1])) >= 0.9:
+                performers.append(parts[0])
+        for performer in performers:
+            for remixer in remix['requested_remixers']:
+                if primary in (normalize('{} / {}'.format(performer, remixer)),
+                               normalize('{} / {}'.format(remixer, performer))):
+                    scores.append(1.0)
+    # Structured catalog/fingerprint records have authoritative artist fields;
+    # a performer's name inside the song title cannot override those credits.
+    for value in [candidate.get('title') if allow_title_artist else None,
+                  candidate.get('channel'), candidate.get('uploader')]:
         text = normalize(value)
         if _contains(primary, text):
             scores.append(1.0)
@@ -223,17 +343,18 @@ def evaluate(track, candidate, config=None, manual=False):
     if candidate.get('isAvailable') is False:
         return None, 'unavailable recording'
     title = str(candidate.get('title') or candidate.get('track') or '')
-    expected_title = _clean_title(track.name)
-    candidate_titles = [title, candidate.get('track') or '']
-    title_score = max(similarity(expected_title, _clean_title(t, track.artists)) for t in candidate_titles)
+    title_score = _title_score(track, candidate)
     artist_score = _artist_score(track, candidate)
     if not manual:
         if title_score < config.min_title:
             return None, 'title mismatch ({:.2f})'.format(title_score)
-        if artist_score < config.min_artist:
-            return None, 'insufficient artist evidence ({:.2f})'.format(artist_score)
+        remix = _remix_evidence(track, candidate)
+        if remix['reason']:
+            return None, remix['reason']
         desired_versions = _versions(track.name)
         found_versions = _versions(_clean_title(title, track.artists)) | _versions(candidate.get('track'))
+        if remix['status'] == 'same':
+            found_versions.add('remix')
         # A word within the actual song name (e.g. "Live Forever") is not a tag.
         remainder = normalize(title).replace(normalize(track.name), '')
         extra_versions = _versions(remainder) - desired_versions
@@ -241,6 +362,8 @@ def evaluate(track, candidate, config=None, manual=False):
             return None, 'different or unconfirmed recording version'
         if re.search(r'\b(?:full album|full concert|album stream|complete album|playlist|compilation)\b', remainder):
             return None, 'multi-track upload'
+        if artist_score < config.min_artist:
+            return None, 'insufficient artist evidence ({:.2f})'.format(artist_score)
 
     expected = duration_seconds(getattr(track, 'duration', None))
     actual = duration_seconds(candidate.get('duration_seconds')) or duration_seconds(candidate.get('duration'))
@@ -434,7 +557,27 @@ class YouTubeMatcher:
         self.config = config or MatchConfig()
         self.enrich_track = enrich_track
 
-    def _inspect_stage(self, track, entries, seen, manual=False):
+    def _reject(self, track, item, url, reason, rejections):
+        actual = duration_seconds(item.get('duration_seconds')) or duration_seconds(item.get('duration'))
+        expected = duration_seconds(getattr(track, 'duration', None))
+        title = str(item.get('title') or item.get('track') or '(untitled)')
+        title_score, artist_score = _title_score(track, item), _artist_score(track, item)
+        remix = _remix_evidence(track, item)
+        self.store.record(track, 'rejected', url=url, reason=reason, title=title,
+                          duration=actual, expected_duration=expected,
+                          source=item.get('_source', 'youtube'), title_score=title_score,
+                          artist_score=artist_score, remix_status=remix['status'],
+                          requested_remixers=remix['requested_remixers'],
+                          title_remixers=remix['title_remixers'], credited_remixers=remix['credited_remixers'])
+        self.logger.debug('Rejected YouTube result: {} [{}]: {}; duration={}; expected={}; title_score={:.2f}; artist_score={:.2f}'.format(
+            title, url, reason,
+            '{:.1f}s'.format(actual) if actual else 'unknown',
+            '{:.1f}s'.format(expected) if expected else 'unknown', title_score, artist_score))
+        if rejections is not None:
+            # Repeated URLs across searches count once, using their latest result.
+            rejections[url] = reason.split(' (', 1)[0]
+
+    def _inspect_stage(self, track, entries, seen, manual=False, rejections=None):
         shortlist = {}
         for item in entries or []:
             if not isinstance(item, dict):
@@ -444,11 +587,10 @@ class YouTubeMatcher:
                 continue
             decision, reason = evaluate(track, item, self.config, manual=manual)
             # Missing artist/duration fields may be recovered from the video page.
-            provisional = max(similarity(_clean_title(track.name), _clean_title(t, track.artists))
-                              for t in (item.get('title'), item.get('track')))
+            provisional = _title_score(track, item)
             if not manual and not decision and (provisional < self.config.min_title or
                     reason.startswith(('duration mismatch', 'live or upcoming', 'multi-track', 'different'))):
-                self.store.record(track, 'rejected', url=url, reason=reason)
+                self._reject(track, item, url, reason, rejections)
                 continue
             priority = decision.score if decision else provisional * 0.8
             if url not in shortlist or priority > shortlist[url][0]:
@@ -471,11 +613,15 @@ class YouTubeMatcher:
                 decision, reason = evaluate(track, merged, self.config, manual=manual)
                 if decision:
                     accepted.append(decision)
+                    if rejections is not None:
+                        rejections.pop(url, None)
                 else:
-                    self.store.record(track, 'rejected', url=url, reason=reason)
+                    self._reject(track, merged, url, reason, rejections)
             except Exception as exc:
                 self.logger.debug('Cannot inspect {}: {}'.format(url, exc))
                 self.store.record(track, 'inspection_failed', url=url, reason=str(exc))
+                if rejections is not None:
+                    rejections[url] = 'video inspection failed'
         for decision in sorted(accepted, key=lambda m: m.score, reverse=True):
             if decision.url not in seen:
                 seen.add(decision.url)
@@ -485,6 +631,7 @@ class YouTubeMatcher:
     def candidates(self, track):
         """Yield validated alternatives lazily; downloading never reruns a search."""
         seen = set()
+        rejections = {}
         override = self.store.override(track)
         if override:
             yield from self._inspect_stage(track, [{'url': override}], seen, manual=True)
@@ -493,7 +640,7 @@ class YouTubeMatcher:
         if cached:
             # Cached entries must pass today's metadata checks too.
             yield from self._inspect_stage(track, [{'url': cached, 'title': track.name,
-                                                    '_source': 'cache'}], seen)
+                                                    '_source': 'cache'}], seen, rejections=rejections)
         query = '{} {}'.format(track.artists[0], track.name)
         queries = list(dict.fromkeys([query, '{} {}'.format(' '.join(track.artists), track.name),
                                       '{} {}'.format(query, track.album_name or '')]))
@@ -520,5 +667,13 @@ class YouTubeMatcher:
                 self.logger.debug('{} search failed for {}: {}'.format(name, track, exc))
                 self.store.record(track, 'search_failed', provider=name, reason=str(exc))
                 continue
-            yield from self._inspect_stage(track, entries, seen)
-        raise NoReliableMatch('No reliable, downloadable YouTube match for {}. See youtube-matching.jsonl.'.format(track))
+            yield from self._inspect_stage(track, entries, seen, rejections=rejections)
+        counts = Counter(rejections.values())
+        summary = ''
+        if counts:
+            reasons = '; '.join('{} {}'.format(count, reason) for reason, count in sorted(counts.items()))
+            summary = 'Rejected {} unique result(s): {}. '.format(len(rejections), reasons)
+        self.store.record(track, 'search_exhausted', rejected_results=len(rejections),
+                          rejection_reasons=dict(counts), yielded_candidates=len(seen))
+        raise NoReliableMatch('No reliable, downloadable YouTube match for {}. {}See {}.'.format(
+            track, summary, self.store.audit_path))
