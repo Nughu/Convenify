@@ -381,7 +381,7 @@ try {
             '-m', 'savify.library_audit',
             '--nml', $nmlPath, '--spotify',
             '--ffmpeg-location', $ffmpegDirectory,
-            '--duration-tolerance', '5'
+            '--duration-tolerance', '8'
         )
         $confirmationPrompt = 'Have you backed up the NML-listed files? Type YES to start replacement; anything else cancels'
     }
@@ -390,7 +390,7 @@ try {
             '-m', 'savify.library_audit', $library,
             '--repair', '--spotify',
             '--ffmpeg-location', $ffmpegDirectory,
-            '--duration-tolerance', '5',
+            '--duration-tolerance', '8',
             '--min-duration', '70',
             '--max-duration', '720'
         )
