@@ -6,3 +6,6 @@ venv/
 **cache**
 .cache
 python/Lib/site-packages/yt_dlp/extractor/shahid.py
+**logs**
+**.log**
+**.jsonl**
