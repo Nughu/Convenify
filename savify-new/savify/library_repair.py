@@ -87,7 +87,8 @@ def metadata_duration_match(track, match, actual_duration, allow_source_duration
 class LibraryRepairer:
     def __init__(self, root, state, matcher, identifier, logger, ffmpeg_location='ffmpeg',
                  options=None, max_candidates=5, downloader=download_candidate):
-        self.root, self.state, self.matcher = Path(root), state, matcher
+        self.root = Path(root) if root is not None else None
+        self.state, self.matcher = state, matcher
         self.identifier, self.logger = identifier, logger
         self.ffmpeg_location, self.options = ffmpeg_location, options or {}
         self.max_candidates, self.downloader = max_candidates, downloader
@@ -164,6 +165,7 @@ class LibraryRepairer:
                                                                     verification=verification)
                     assert_unchanged(path, token, digest)
                     os.replace(staging, path)  # Same-directory filesystem; original never removed first.
+                    self.state.record_installed_replacement(path, backup, match.url, verification)
                     self.state.commit_replacement(replacement_id)
                     self.matcher.store.remember(track, match, duration)
                     reason = ('Replacement matched artist/title/version and expected duration; database identity incomplete or unrecognized.'
@@ -186,7 +188,14 @@ class LibraryRepairer:
         raise RepairError(reason)
 
     def _backup(self, path, token, digest):
-        backup = self.state.directory / 'backups' / digest[:16] / path.relative_to(self.root)
+        if self.root is None:
+            # NML targets can span unrelated directories, drives and UNC shares.
+            # Namespace by full path so equal filenames/content never share a backup.
+            path_id = hashlib.sha256(os.fsencode(str(path.resolve()))).hexdigest()[:16]
+            relative = Path(path_id) / path.name
+        else:
+            relative = path.relative_to(self.root)
+        backup = self.state.directory / 'backups' / digest[:16] / relative
         backup.parent.mkdir(parents=True, exist_ok=True)
         if backup.exists():
             if file_digest(backup) != digest:

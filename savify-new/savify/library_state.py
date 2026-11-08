@@ -11,8 +11,10 @@ import time
 class AuditState:
     policy = 'fingerprint-audit-v1'
 
-    def __init__(self, directory, root):
+    def __init__(self, directory, root, run_log=None):
         self.directory = Path(directory)
+        self.run_log = run_log
+        self.run_log_error = None
         self.directory.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(self.directory / 'audit.sqlite3'))
         self.db.execute('PRAGMA synchronous=FULL')
@@ -33,7 +35,7 @@ class AuditState:
         old_root = self.db.execute("SELECT value FROM settings WHERE key='root'").fetchone()
         if old_root and old_root[0] != str(Path(root).resolve()):
             self.close()
-            raise ValueError('This state directory belongs to a different music root; choose another --state-dir.')
+            raise ValueError('This state directory belongs to a different music root or NML export; choose another --state-dir.')
         with self.db:
             self.db.execute("INSERT OR REPLACE INTO settings VALUES ('root', ?)", (str(Path(root).resolve()),))
 
@@ -68,6 +70,25 @@ class AuditState:
     def log_event(self, event, **details):
         with (self.directory / 'events.jsonl').open('a', encoding='utf-8') as out:
             out.write(json.dumps(dict(time=time.time(), event=event, **details), ensure_ascii=False) + '\n')
+
+    def record_installed_replacement(self, path, backup, source_url, verification):
+        """Log an actual atomic swap, never a cached or recovered old result.
+
+        The optional log is exclusive to this invocation and can be passed
+        directly to traktor_reset_repaired.py without selecting older repairs.
+        """
+        if self.run_log is None:
+            return
+        record = dict(time=time.time(), event='file_result', status='repaired',
+                      path=str(path), backup=str(backup), source_url=source_url,
+                      verification=verification)
+        try:
+            self.run_log.write(json.dumps(record, ensure_ascii=False) + '\n')
+            self.run_log.flush()
+            os.fsync(self.run_log.fileno())
+        except (OSError, ValueError) as exc:
+            self.run_log_error = str(exc)
+            raise
 
     def cache_get(self, kind, key, max_age):
         row = self.db.execute('SELECT value, updated FROM cache WHERE kind=? AND key=?', (kind, key)).fetchone()
@@ -106,7 +127,7 @@ class AuditState:
         target = self.directory / 'report.csv'
         temporary = target.with_suffix('.csv.tmp')
         keys = ['path', 'status', 'artist', 'title', 'track_id', 'reason', 'duration',
-                'original_duration', 'expected_duration', 'duration_tolerance', 'repair_trigger',
+                'original_duration', 'original_verification', 'expected_duration', 'duration_tolerance', 'repair_trigger',
                 'min_duration', 'max_duration', 'selection_source',
                 'catalog_note', 'verification', 'score', 'identified_as', 'backup', 'source_url', 'discarded_tags']
         with temporary.open('w', encoding='utf-8-sig', newline='') as out:
@@ -122,6 +143,18 @@ class AuditState:
                 writer.writerow(result)
         temporary.replace(target)
         return target
+
+
+@contextmanager
+def repair_run_log(path):
+    """Create a fresh handoff log; refuse to reuse another run's contents."""
+    if path is None:
+        yield None
+        return
+    path = Path(path).expanduser().absolute()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('x', encoding='utf-8') as stream:
+        yield stream
 
 
 @contextmanager

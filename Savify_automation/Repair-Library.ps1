@@ -1,7 +1,10 @@
 #Requires -Version 5.1
 <#
 Run through ..\Repair-Library.bat, or invoke this script in PowerShell.
-Use ..\Repair-Library-NML.bat or -NmlMode to select an exported Traktor NML file.
+Use ..\Repair-Library-NML.bat or -NmlMode to replace all files in a Traktor NML export.
+NML mode does not ask for a library path or verify the existing audio.
+After repair, optionally reset this run's repaired tracks in Traktor (default Yes).
+Keep traktor_reset_repaired.py in this script's directory.
 The supplied Python installation must already contain Savify and its dependencies.
 #>
 [CmdletBinding()]
@@ -17,11 +20,13 @@ if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction Sile
 }
 
 function Read-YesNo {
-    param([string]$Prompt)
+    param([string]$Prompt, [switch]$DefaultYes)
+    $choices = if ($DefaultYes) { '[Y/n]' } else { '[y/N]' }
     while ($true) {
-        $answer = (Read-Host "$Prompt [y/N]").Trim()
+        $answer = (Read-Host "$Prompt $choices").Trim()
+        if ([string]::IsNullOrWhiteSpace($answer)) { return [bool]$DefaultYes }
         if ($answer -match '^(?i:y|yes)$') { return $true }
-        if ($answer -match '^(?i:n|no)?$') { return $false }
+        if ($answer -match '^(?i:n|no)$') { return $false }
         Write-Host 'Please enter Y or N.'
     }
 }
@@ -243,6 +248,60 @@ function Set-AcoustIdKey {
     }
 }
 
+function Invoke-TraktorCleanup {
+    param([string]$Python, [string]$RepairLog, [string]$ResetScript)
+    if (-not (Test-Path -LiteralPath $RepairLog -PathType Leaf)) {
+        throw "This run's replacement log was not created: $RepairLog. Traktor cleanup was skipped."
+    }
+    $repairedCount = 0
+    foreach ($line in [IO.File]::ReadLines($RepairLog)) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        $record = ConvertFrom-Json -InputObject $line -ErrorAction Stop
+        if ($record.event -eq 'file_result' -and $record.status -eq 'repaired') {
+            $repairedCount++
+        }
+    }
+    if ($repairedCount -eq 0) {
+        Write-Host 'No files were replaced in this run. No Traktor cleanup is needed.'
+        return 0
+    }
+    Write-Host ''
+    Write-Host "$repairedCount file(s) were replaced in this run."
+    if (-not (Read-YesNo -Prompt 'Remove these repaired tracks from your Traktor collection now?' -DefaultYes)) {
+        Write-Host "Traktor cleanup skipped. This run's replacement log: $RepairLog"
+        return 0
+    }
+    if (-not (Test-Path -LiteralPath $ResetScript -PathType Leaf)) {
+        throw "Traktor reset script not found: $ResetScript. Put traktor_reset_repaired.py beside Repair-Library.ps1."
+    }
+    Write-Host 'Close Traktor before continuing. The reset tool will back up your collection before changing it.' -ForegroundColor Yellow
+    while ($true) {
+        try {
+            $collection = Resolve-UserPath -Text (Read-Host 'Path to your active Traktor collection.nml (not an exported playlist)')
+            if (-not (Test-Path -LiteralPath $collection -PathType Leaf)) {
+                throw 'The Traktor collection path must be an existing file.'
+            }
+            if ([IO.Path]::GetExtension($collection) -ine '.nml') {
+                throw 'Select your Traktor collection with the .nml extension.'
+            }
+            break
+        }
+        catch { Write-Warning $_.Exception.Message }
+    }
+    $cleanupArguments = @($ResetScript, $collection, '--repair-log', $RepairLog, '--apply')
+    Write-Host "Resetting Traktor entries using this run's log: $RepairLog" -ForegroundColor Cyan
+    # Show the tool's report/backup/re-import paths without returning its text as the exit code.
+    & $Python @cleanupArguments | Out-Host
+    $cleanupExitCode = $LASTEXITCODE
+    if ($cleanupExitCode -eq 0) {
+        Write-Host 'Traktor cleanup finished. Use the reimport-repaired.nml path shown above to re-import and analyze the tracks.' -ForegroundColor Green
+    }
+    else {
+        Write-Warning "Traktor cleanup exited with code $cleanupExitCode. Inspect the tool's output above before retrying."
+    }
+    return $cleanupExitCode
+}
+
 $exitCode = 1
 $locationPushed = $false
 $originalPath = $env:PATH
@@ -284,19 +343,20 @@ try {
             }
             catch { Write-Warning $_.Exception.Message }
         }
-        Write-Host 'The music library folder must contain all tracks listed in this NML export.'
+        Write-Host 'Every listed file is selected for replacement. Existing audio will not be verified.'
         Write-Host ''
     }
-
-    while ($true) {
-        try {
-            $library = Resolve-UserPath -Text (Read-Host 'Path to your music library')
-            if (-not (Test-Path -LiteralPath $library -PathType Container)) {
-                throw 'The music library path must be an existing directory.'
+    else {
+        while ($true) {
+            try {
+                $library = Resolve-UserPath -Text (Read-Host 'Path to your music library')
+                if (-not (Test-Path -LiteralPath $library -PathType Container)) {
+                    throw 'The music library path must be an existing directory.'
+                }
+                break
             }
-            break
+            catch { Write-Warning $_.Exception.Message }
         }
-        catch { Write-Warning $_.Exception.Message }
     }
 
     while ($true) {
@@ -316,44 +376,80 @@ try {
     Set-AcoustIdKey
     # Keep subprocesses using the same FFmpeg; do not change the saved user PATH.
     $env:PATH = $ffmpegDirectory + [IO.Path]::PathSeparator + $originalPath
-    $auditArguments = @(
-        '-m', 'savify.library_audit', $library,
-        '--repair', '--spotify',
-        '--ffmpeg-location', $ffmpegDirectory,
-        '--duration-tolerance', '5',
-        '--min-duration', '60',
-        '--max-duration', '600'
-    )
     if ($NmlMode) {
-        $auditArguments += @('--nml', $nmlPath)
-    }
-    Write-Host ''
-    Write-Host "Library: $library"
-    Write-Host "FFmpeg:  $ffmpegDirectory"
-    Write-Host ('Options: ' + ($auditArguments[3..($auditArguments.Count - 1)] -join ' '))
-    if ($NmlMode) {
-        Write-Host "NML:     $nmlPath"
-        Write-Host 'Repair can replace only the NML-listed tracks in the selected music library.' -ForegroundColor Yellow
+        $auditArguments = @(
+            '-m', 'savify.library_audit',
+            '--nml', $nmlPath, '--spotify',
+            '--ffmpeg-location', $ffmpegDirectory,
+            '--duration-tolerance', '5'
+        )
+        $confirmationPrompt = 'Have you backed up the NML-listed files? Type YES to start replacement; anything else cancels'
     }
     else {
+        $auditArguments = @(
+            '-m', 'savify.library_audit', $library,
+            '--repair', '--spotify',
+            '--ffmpeg-location', $ffmpegDirectory,
+            '--duration-tolerance', '5',
+            '--min-duration', '70',
+            '--max-duration', '720'
+        )
+        $confirmationPrompt = 'Have you backed up this library? Type YES to start repair; anything else cancels'
+    }
+    # A fresh log contains only actual replacements from this invocation.
+    # Cumulative audit.log/events.jsonl/report.csv must not drive this automatic cleanup.
+    $runLogName = 'repair-{0}-{1}.jsonl' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), ([Guid]::NewGuid().ToString('N'))
+    $runLog = Join-Path (Join-Path $PSScriptRoot 'logs') $runLogName
+    $auditArguments += @('--run-log', $runLog)
+    Write-Host ''
+    Write-Host "FFmpeg:  $ffmpegDirectory"
+    Write-Host ('Arguments: ' + ($auditArguments -join ' '))
+    if ($NmlMode) {
+        Write-Host "NML:     $nmlPath"
+        Write-Host 'Re-download and replace every NML-listed file at its original path. No library scan or existing-audio checks.' -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "Library: $library"
         Write-Host 'Repair can replace files in the selected music library.' -ForegroundColor Yellow
     }
-    $confirmed = (Read-Host 'Have you backed up this library? Type YES to start repair; anything else cancels').Trim()
+    $confirmed = (Read-Host $confirmationPrompt).Trim()
     if ($confirmed -ine 'YES') {
         Write-Host 'Cancelled. No library repair was started.'
         $exitCode = 0
     }
     else {
         Write-Host ''
-        Write-Host 'Starting Savify library repair...' -ForegroundColor Cyan
+        if ($NmlMode) {
+            Write-Host 'Starting direct NML replacements...' -ForegroundColor Cyan
+        }
+        else {
+            Write-Host 'Starting Savify library repair...' -ForegroundColor Cyan
+        }
         # Use the call operator and an argument array; do not build a command string.
         & $python @auditArguments
-        $exitCode = $LASTEXITCODE
+        $repairExitCode = $LASTEXITCODE
+        $exitCode = $repairExitCode
         if ($exitCode -eq 0) {
             Write-Host 'Savify finished successfully.' -ForegroundColor Green
         }
         else {
             Write-Host "Savify exited with code $exitCode. Check its output above." -ForegroundColor Red
+        }
+        # Exit 1 means the batch completed with unresolved tracks. Its successful
+        # replacements still need resetting; startup failures/interruption do not.
+        if ($repairExitCode -eq 0 -or $repairExitCode -eq 1) {
+            try {
+                $cleanupExitCode = Invoke-TraktorCleanup -Python $python -RepairLog $runLog -ResetScript (Join-Path $PSScriptRoot 'traktor_reset_repaired.py')
+                if ($cleanupExitCode -ne 0 -and $exitCode -eq 0) { $exitCode = $cleanupExitCode }
+            }
+            catch {
+                Write-Warning ("Repair finished, but Traktor cleanup could not complete: " + $_.Exception.Message)
+                Write-Host "This run's replacement log: $runLog"
+                if ($exitCode -eq 0) { $exitCode = 2 }
+            }
+        }
+        else {
+            Write-Warning "Repair did not finish normally; automatic Traktor cleanup was skipped. If created, this run's replacement log is: $runLog"
         }
     }
 }

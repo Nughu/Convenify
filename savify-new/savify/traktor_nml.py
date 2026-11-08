@@ -86,9 +86,9 @@ def read_nml_paths(filename):
     return list(unique.values())
 
 
-def selected_paths(filename, root, state_dir, extensions):
-    """Constrain exact paths to this library. Never guess by filename or title."""
-    root, state_dir = Path(root).resolve(), Path(state_dir).resolve()
+def selected_paths(filename, state_dir, extensions):
+    """Use the export's exact absolute paths, including different music drives."""
+    state_dir = Path(state_dir).resolve()
     selected = {}
     for value in read_nml_paths(filename):
         path = Path(value)
@@ -97,16 +97,12 @@ def selected_paths(filename, root, state_dir, extensions):
         if path.is_symlink():
             raise ValueError('NML selects a symbolic link: {}'.format(value))
         resolved = path.resolve()
-        try:
-            relative = resolved.relative_to(root)
-        except ValueError as exc:
-            raise ValueError('NML track is outside the library directory: {}'.format(value)) from exc
         if (resolved == state_dir or state_dir in resolved.parents
-                or any(part == '_savify_audit' or part.startswith('.savify-repair-') for part in relative.parts)):
+                or any(part == '_savify_audit' or part.startswith('.savify-repair-') for part in resolved.parts)):
             raise ValueError('NML selects an audit backup or temporary file: {}'.format(value))
         if path.suffix.lower() not in extensions:
             raise ValueError('NML selects an unsupported audio format: {}'.format(value))
-        # Keep missing paths in the selection: the audit reports each as an error
+        # Keep missing paths in the selection: the runner reports each as an error
         # and continues with the remaining listed tracks, never the whole library.
         selected.setdefault(path_key(resolved), resolved)
     return list(selected.values())

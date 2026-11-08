@@ -1,4 +1,4 @@
-"""Recursive duration audit and safe repair: python -m savify.library_audit."""
+"""Library audit or direct NML replacements: python -m savify.library_audit."""
 import argparse
 from collections import Counter
 import json
@@ -12,7 +12,7 @@ from .audio_identity import (AcoustIDClient, AudioIdentifier, Fingerprinter, Ide
                              IdentityConfigurationError, IdentityResult)
 from .library_catalog import CatalogResolver
 from .library_repair import LibraryRepairer, RepairError, assert_unchanged, file_digest, file_token
-from .library_state import AuditState, audit_lock
+from .library_state import AuditState, audit_lock, repair_run_log
 from .library_tags import SUPPORTED_EXTENSIONS, TagSnapshot
 from .media_validation import AudioValidationError, _run, ffmpeg_binary, probe_audio, validate_audio
 from .traktor_nml import selected_paths
@@ -40,7 +40,7 @@ class LibraryAuditor:
     def __init__(self, root, state, identifier, logger, repairer=None, catalog=None,
                  ffmpeg_location='ffmpeg', rescan=False, repair_unknown=False, reference_check=False,
                  full_verification=False, duration_tolerance_seconds=10.0,
-                 min_duration=None, max_duration=None, nml_paths=None):
+                 min_duration=None, max_duration=None):
         self.root, self.state, self.identifier, self.logger = Path(root), state, identifier, logger
         self.repairer, self.catalog = repairer, catalog
         self.ffmpeg_location, self.rescan, self.repair_unknown = ffmpeg_location, rescan, repair_unknown
@@ -54,21 +54,18 @@ class LibraryAuditor:
         self.min_duration, self.max_duration = [duration_seconds(value) for value in bounds]
         if self.min_duration is not None and self.max_duration is not None and self.min_duration > self.max_duration:
             raise ValueError('--min-duration must not exceed --max-duration.')
-        self.nml_paths = tuple(nml_paths) if nml_paths is not None else None
-        if self.nml_paths == ():
-            raise ValueError('NML selection is empty; refusing to scan the entire library.')
 
-    def process(self, path, force_redownload=False):
+    def process(self, path):
         path = Path(path)
         result = {'path': str(path), 'status': 'error', 'reason': '',
                   'min_duration': self.min_duration, 'max_duration': self.max_duration,
-                  'selection_source': 'nml' if force_redownload else 'library_scan'}
+                  'selection_source': 'library_scan'}
         digest = ''
         try:
             token = file_token(path)
             # Read the entire file only for an existing content checkpoint or an
             # actual verification/repair. Most files need only tags and a probe.
-            if not force_redownload and (self.full_verification or self.state.has_content_checkpoint(path)):
+            if self.full_verification or self.state.has_content_checkpoint(path):
                 digest = file_digest(path)
                 assert_unchanged(path, token, digest)
                 previous = self.state.cached_file(path, digest) if not self.rescan else None
@@ -104,11 +101,7 @@ class LibraryAuditor:
                 range_mismatch = bool(range_reason)
                 duration_mismatch = bool(expected and abs(duration - expected) > tolerance)
                 # Never infer the desired length from the potentially wrong file.
-                if force_redownload:
-                    identity = IdentityResult('selected_for_repair',
-                        'Selected by NML export; requesting a fresh download regardless of existing duration or checkpoint.',
-                        duration=duration)
-                elif range_mismatch:
+                if range_mismatch:
                     self.logger.info('  Existing file has %s; requesting a replacement.', range_reason)
                     identity = IdentityResult('outside_duration_range', range_reason, duration=duration)
                 elif duration_mismatch:
@@ -148,10 +141,7 @@ class LibraryAuditor:
                     except IdentityError as exc:
                         identity = IdentityResult('unknown', str(exc), duration=duration)
             except AudioValidationError as exc:
-                if force_redownload:
-                    identity = IdentityResult('selected_for_repair',
-                        'Selected by NML export; requesting a fresh download despite unreadable audio duration: {}'.format(exc))
-                elif self.full_verification:
+                if self.full_verification:
                     identity = IdentityResult('corrupt', 'Audio decode/probe failed: {}'.format(exc))
                 else:
                     identity = IdentityResult('unknown',
@@ -160,16 +150,16 @@ class LibraryAuditor:
             result.update(status=identity.status, reason=identity.reason, score=identity.score,
                           duration=identity.duration, identity=identity.to_dict(),
                           original_duration=identity.duration, original_identity=identity.to_dict(),
-                          repair_trigger=('nml_selection' if force_redownload else 'duration_range' if range_mismatch
+                          repair_trigger=('duration_range' if range_mismatch
                                           else 'duration_mismatch' if duration_mismatch else identity.status),
                           identified_as='; '.join('{} — {}'.format('/'.join(r.get('artists') or []), r.get('title') or '?')
                                                   for r in identity.recordings))
             if file_token(path) != token:
                 raise RepairError('Original changed during the audit; no replacement was made. Close Traktor and retry.')
-            verify_reference = (not (force_redownload or range_mismatch) and self.full_verification
+            verify_reference = (not range_mismatch and self.full_verification
                                 and identity.status == 'unknown' and self.reference_check and self.repairer is not None
                                 and expected is not None and (identity.unrecognized or identity.incomplete or identity.recordings))
-            should_repair = force_redownload or range_mismatch or duration_mismatch or (self.full_verification and (
+            should_repair = range_mismatch or duration_mismatch or (self.full_verification and (
                 identity.status in ('mismatch', 'corrupt') or (
                     self.repair_unknown and identity.status == 'unknown') or verify_reference))
             if should_repair and self.repairer and not digest:
@@ -182,7 +172,7 @@ class LibraryAuditor:
                 try:
                     repaired = self.repairer.repair(path, snapshot, track, token, digest,
                                                     duration_mismatch=duration_mismatch, verify_existing=verify_reference,
-                                                    force_redownload=force_redownload or range_mismatch)
+                                                    force_redownload=range_mismatch)
                     digest = repaired.pop('digest')
                     result.update(repaired)
                 except IdentityConfigurationError:
@@ -209,13 +199,12 @@ class LibraryAuditor:
     def run(self, limit=None):
         counts = Counter()
         scan_errors = []
-        files = self.nml_paths if self.nml_paths is not None else audio_files(
-            self.root, self.state.directory, self.logger, scan_errors.append)
+        files = audio_files(self.root, self.state.directory, self.logger, scan_errors.append)
         for index, path in enumerate(files, 1):
             if limit is not None and index > limit:
                 break
             self.logger.info('[%s] Checking %s', index, path)
-            result = self.process(path, force_redownload=self.nml_paths is not None)
+            result = self.process(path)
             counts[result['status']] += 1
             if result.get('cached'):
                 counts['cached'] += 1
@@ -229,11 +218,92 @@ class LibraryAuditor:
         return counts
 
 
+class NMLRepairRunner:
+    """Replace known-broken targets without auditing their existing audio.
+
+    Metadata identifies the requested song. Content hashes protect the original
+    against concurrent writes and verify backups; they never decide whether a
+    target needs repair. Only newly downloaded audio goes through validation.
+    """
+    def __init__(self, paths, state, repairer, logger, catalog=None,
+                 duration_tolerance_seconds=10.0, min_duration=None, max_duration=None):
+        self.paths = tuple(paths)
+        if not self.paths:
+            raise ValueError('NML selection is empty; no files were selected.')
+        if repairer is None:
+            raise ValueError('NML mode requires a replacement downloader.')
+        self.state, self.repairer, self.logger, self.catalog = state, repairer, logger, catalog
+        self.duration_tolerance = duration_tolerance(None, override=duration_tolerance_seconds)
+        self.min_duration, self.max_duration = min_duration, max_duration
+
+    def process(self, path):
+        path = Path(path)
+        result = {'path': str(path), 'status': 'error', 'reason': '',
+                  'selection_source': 'nml', 'repair_trigger': 'nml_selection',
+                  'original_verification': 'skipped_nml', 'original_duration': None,
+                  'min_duration': self.min_duration, 'max_duration': self.max_duration,
+                  'duration_tolerance': self.duration_tolerance}
+        digest = ''
+        try:
+            token = file_token(path)
+            snapshot = TagSnapshot.read(path)
+            track = snapshot.intended_track()
+            result.update(artist=' / '.join(track.artists), title=track.name, track_id=str(track.id))
+            if self.catalog:
+                self.catalog.enrich(track)
+            track.duration_tolerance = self.duration_tolerance
+            track.min_duration, track.max_duration = self.min_duration, self.max_duration
+            result.update(expected_duration=duration_seconds(track.duration),
+                          catalog_note=getattr(track, 'catalog_note', ''))
+            # No duration probe, audio decoding, fingerprint, reference comparison
+            # or successful-checkpoint shortcut for the known-broken original.
+            digest = file_digest(path)
+            assert_unchanged(path, token, digest)
+            try:
+                repaired = self.repairer.repair(path, snapshot, track, token, digest,
+                                                force_redownload=True, verify_existing=False)
+                digest = repaired.pop('digest')
+                result.update(repaired)
+            except IdentityConfigurationError:
+                raise
+            except Exception as exc:
+                self.logger.debug('NML replacement failure details for %s', path, exc_info=True)
+                # A reporting failure after the atomic swap must not hide success.
+                current_digest = file_digest(path)
+                recovered = self.state.replacement_for(path, current_digest)
+                if current_digest != digest and recovered:
+                    digest = current_digest
+                    result.update(recovered, status='repaired', reason='Validated replacement installed; recovered from journal.')
+                else:
+                    result.update(status='repair_failed', reason=str(exc))
+        except IdentityConfigurationError:
+            raise
+        except Exception as exc:
+            self.logger.debug('NML target failure details for %s', path, exc_info=True)
+            result.update(status='error', reason=str(exc))
+        self.state.record(path, digest, result)
+        return result
+
+    def run(self, limit=None):
+        counts = Counter()
+        for index, path in enumerate(self.paths, 1):
+            if limit is not None and index > limit:
+                break
+            self.logger.info('[%s] Re-downloading NML target %s (existing audio verification skipped)', index, path)
+            result = self.process(path)
+            counts[result['status']] += 1
+            self.logger.info('  %s: %s', result['status'], result['reason'])
+            if index % 25 == 0:
+                self.state.export_report()
+        return counts
+
+
 def parser():
     result = argparse.ArgumentParser(description=(
         'Recursively check music durations. Matching lengths skip audio verification and downloads. '
-        'Use duration bounds or --nml to request additional replacements. Default: audit only; --repair installs replacements.'))
-    result.add_argument('directory', type=Path, help='Music directory; includes all subdirectories.')
+        'Alternatively, --nml FILE directly re-downloads every listed track without a library directory or existing-audio checks. '
+        'Directory mode defaults to audit only; --repair installs replacements.'))
+    result.add_argument('directory', type=Path, nargs='?', help='Music directory for audit mode; cannot be combined with --nml.')
     result.add_argument('--repair', action='store_true', help='Install validated replacements at the original paths.')
     result.add_argument('--min-duration', type=duration_bound_argument, metavar='SECONDS', help=(
         'Also replace files shorter than this duration with --repair, even without a catalog length. '
@@ -242,8 +312,8 @@ def parser():
         'Also replace files longer than this duration with --repair, even without a catalog length. '
         'Seconds or MM:SS / HH:MM:SS. Upper bound also applies to replacements.'))
     result.add_argument('--nml', type=Path, metavar='FILE', help=(
-        'Only process tracks explicitly listed in this Traktor NML export. With --repair, force a fresh '
-        'download for every listed track, bypassing previous successful checkpoints and duration-match skips.'))
+        'Direct replacement mode: re-download every explicitly listed track at its original path. '
+        'Implies --repair; no directory, existing-audio verification or successful-checkpoint skips.'))
     result.add_argument('--duration-tolerance', type=duration_tolerance_argument, default=10.0, metavar='SECONDS', help=(
         'Maximum absolute difference from expected duration for existing files and replacements '
         '(default: 10 seconds, independent of track length). Accepts non-negative decimals; 0 requires an exact match.'))
@@ -253,7 +323,12 @@ def parser():
     result.add_argument('--repair-unknown', action='store_true', help=(
         'With --repair --full-verification, also attempt unrecognized/ambiguous files. '
         'Replacement still requires positive identity verification.'))
-    result.add_argument('--state-dir', type=Path, help='Reports, checkpoints and backups (default: DIRECTORY/_savify_audit).')
+    result.add_argument('--state-dir', type=Path, help=(
+        'Reports and backups (default: DIRECTORY/_savify_audit in audit mode; '
+        '_savify_audit/nml-PLAYLIST beside the NML file in direct replacement mode).'))
+    result.add_argument('--run-log', type=Path, metavar='FILE', help=(
+        'Create a new JSONL log of replacements installed during this invocation for Traktor cleanup. '
+        'Excludes cached results and older repairs; the file must not already exist.'))
     result.add_argument('--rescan', action='store_true', help=(
         'Recheck unchanged verified/repaired files using the selected mode; also refresh fingerprint lookups. '
         'Does not enable full verification.'))
@@ -294,9 +369,24 @@ def duration_bound_argument(value):
 def main(argv=None):
     command = parser()
     args = command.parse_args(argv)
-    root = args.directory.expanduser().resolve()
-    if not root.is_dir():
-        command.error('directory must be an existing directory')
+    if args.nml is not None:
+        if args.directory is not None:
+            command.error('--nml is a separate replacement mode; do not supply a library directory')
+        if args.full_verification or args.repair_unknown:
+            command.error('--nml replaces known-broken tracks directly; do not use --full-verification or --repair-unknown')
+        args.nml = args.nml.expanduser().resolve()
+        args.repair = True
+        root = None
+        state_source = args.nml
+        default_state_dir = args.nml.parent / '_savify_audit' / ('nml-' + args.nml.stem)
+    else:
+        if args.directory is None:
+            command.error('supply a music directory for audit mode, or --nml FILE for direct replacements')
+        root = args.directory.expanduser().resolve()
+        if not root.is_dir():
+            command.error('directory must be an existing directory')
+        state_source = root
+        default_state_dir = root / '_savify_audit'
     if args.min_duration is not None and args.max_duration is not None and args.min_duration > args.max_duration:
         command.error('--min-duration must not exceed --max-duration')
     if args.repair_unknown and not args.repair:
@@ -311,13 +401,13 @@ def main(argv=None):
     if args.spotify and not has_spotify_credentials:
         command.error('--spotify requires SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET')
     use_spotify = has_spotify_credentials if args.spotify is None else args.spotify
-    state_dir = args.state_dir.expanduser().resolve() if args.state_dir else root / '_savify_audit'
-    if state_dir == root or state_dir in root.parents:
+    state_dir = args.state_dir.expanduser().resolve() if args.state_dir else default_state_dir
+    if root is not None and (state_dir == root or state_dir in root.parents):
         command.error('--state-dir must be a separate directory, not the music root or its parent')
     nml_paths = None
     if args.nml:
         try:
-            nml_paths = selected_paths(args.nml, root, state_dir, SUPPORTED_EXTENSIONS)
+            nml_paths = selected_paths(args.nml, state_dir, SUPPORTED_EXTENSIONS)
         except ValueError as exc:
             command.error(str(exc))
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -334,12 +424,12 @@ def main(argv=None):
             fingerprinter.check()
             client = AcoustIDClient(os.environ.get('ACOUSTID_API_KEY'))
             identifier = AudioIdentifier(fingerprinter, client)
-        logger.info('Audit mode: %s.', 'NML selection; all listed tracks requested for replacement' if nml_paths is not None else
+        logger.info('Mode: %s.', 'direct NML replacement; existing audio is not verified' if nml_paths is not None else
                     'full audio verification' if args.full_verification else
                     'duration only; matching lengths skip audio verification and downloads unless outside configured bounds')
         logger.info('Duration tolerance: +/- %gs (fixed, independent of track length).', args.duration_tolerance)
         if args.min_duration is not None or args.max_duration is not None:
-            logger.info('Allowed duration range: %s to %s seconds (inclusive); outside this range requests repair.',
+            logger.info('Allowed duration range: %s to %s seconds (inclusive).',
                         args.min_duration if args.min_duration is not None else 'no minimum',
                         args.max_duration if args.max_duration is not None else 'no maximum')
         if nml_paths is not None:
@@ -347,12 +437,13 @@ def main(argv=None):
                         len(nml_paths), args.nml)
         if args.repair:
             logger.info('Repair enabled. Close Traktor/tag editors. Originals will be backed up before replacement.')
-            logger.info('Unknown-file reference comparison: %s.',
-                        'enabled when an independent duration is known' if args.full_verification and not args.no_reference_check
-                        else 'disabled')
+            if nml_paths is None:
+                logger.info('Unknown-file reference comparison: %s.',
+                            'enabled when an independent duration is known' if args.full_verification and not args.no_reference_check
+                            else 'disabled')
         logger.info('Spotify expected-duration lookup: %s.', 'enabled' if use_spotify else 'disabled; set SPOTIPY_CLIENT_ID/SECRET to enable')
-        with audit_lock(state_dir):
-            state = AuditState(state_dir, root)
+        with audit_lock(state_dir), repair_run_log(args.run_log) as run_log:
+            state = AuditState(state_dir, state_source, run_log=run_log)
             file_log = logging.FileHandler(state_dir / 'audit.log', encoding='utf-8')
             file_log.setLevel(logging.DEBUG)
             file_log.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s'))
@@ -381,17 +472,26 @@ def main(argv=None):
                     matcher = YouTubeMatcher(SearchProvider(options, logger, config), store, logger, config)
                     repairer = LibraryRepairer(root, state, matcher, identifier, logger, args.ffmpeg_location,
                                                options, args.max_candidates)
-                auditor = LibraryAuditor(root, state, identifier, logger, repairer, catalog, args.ffmpeg_location,
-                                         args.rescan, args.repair_unknown,
-                                         reference_check=args.full_verification and not args.no_reference_check,
-                                         full_verification=args.full_verification,
-                                         duration_tolerance_seconds=args.duration_tolerance,
-                                         min_duration=args.min_duration, max_duration=args.max_duration, nml_paths=nml_paths)
-                counts = auditor.run(args.limit)
+                if nml_paths is not None:
+                    runner = NMLRepairRunner(nml_paths, state, repairer, logger, catalog,
+                                              duration_tolerance_seconds=args.duration_tolerance,
+                                              min_duration=args.min_duration, max_duration=args.max_duration)
+                else:
+                    runner = LibraryAuditor(root, state, identifier, logger, repairer, catalog, args.ffmpeg_location,
+                                             args.rescan, args.repair_unknown,
+                                             reference_check=args.full_verification and not args.no_reference_check,
+                                             full_verification=args.full_verification,
+                                             duration_tolerance_seconds=args.duration_tolerance,
+                                             min_duration=args.min_duration, max_duration=args.max_duration)
+                counts = runner.run(args.limit)
                 logger.info('Results: %s', json.dumps(dict(counts), sort_keys=True))
                 logger.info('Report: %s', state_dir / 'report.csv')
+                if state.run_log_error is not None:
+                    logger.error('This run\'s replacement log could not be completed; automatic Traktor cleanup must be skipped: %s',
+                                 state.run_log_error)
+                    return 2
                 return 1 if any(counts[status] for status in (
-                    'unknown', 'mismatch', 'corrupt', 'repair_failed', 'error', 'outside_duration_range', 'selected_for_repair')) else 0
+                    'unknown', 'mismatch', 'corrupt', 'repair_failed', 'error', 'outside_duration_range')) else 0
             finally:
                 try:
                     state.export_report()
@@ -400,7 +500,10 @@ def main(argv=None):
                     logger.removeHandler(file_log)
                     file_log.close()
     except KeyboardInterrupt:
-        logger.warning('Interrupted. Completed files are checkpointed; rerun the same command to resume.')
+        if nml_paths is not None:
+            logger.warning('Interrupted. Completed replacements are recorded; rerunning this NML re-downloads every listed track again.')
+        else:
+            logger.warning('Interrupted. Completed files are checkpointed; rerun the same command to resume.')
         return 130
     except (IdentityConfigurationError, AudioValidationError, OSError, ValueError, RuntimeError) as exc:
         logger.error('%s', exc)
