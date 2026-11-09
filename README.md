@@ -8,12 +8,16 @@
 <p>
   This program is a custom upgrade of LaurenceRawlings/savify that i made for myself, originally as just a small wrapper, in order to make it as simple as possible to sync my local music with my Spotify library. </br>
   There are 2 main scripts; a manual downloader (download.py) and an automated library updater (update_library.py). The manual downloader takes a link (or a file containing multiple links) and sorts the downloaded tracks into a specific folder structure depending on whether it's a track, playlist or album. The updater takes an internal list of playlists, each entry consisting of name, path, link and genre of the playlist. When run, it iterates through these playlists, downloads any newly added tracks, puts them into the specified directory and then adds a genre tag to each downloaded file, making it especially convenient for DJs who like to have all music of a genre easily accessible in one place. </br> 
-  If the manual downloader is provided with a .txt file (you can also just type "q" to make it use download-queue.txt), it iterates through all links in the file. After it has processed all of them, you'll be shown a report listing the successful downloads and the songs that failed along with their line in the text file and error message. </br>
-  You can edit config.json and playlists.json to fit your local archive, specifying locations, Savify parameters and your own playlists to be synced by update_library.py. </br> </br>
+  If the manual downloader is provided with a .txt file (you can also just type "q" to make it use <code>download-queue.txt</code>), it iterates through all links in the file. After it has processed all of them, you'll be shown a report listing the successful downloads and the songs that failed along with their line in the text file and error message. </br>
+  You can edit <code>config.json</code> and <code>playlists.json</code> to fit your local archive, specifying locations, Savify parameters and your own playlists to be synced by update_library.py. </br> </br>
   The first version of this used the .exe release of Savify, and the basic mechanism is still based on that principle: </br>
-  Convenify takes a Spotify link, looks into the URL, and then builds a custom command to launch Savify with certain parameters. Savify takes the metadata from Spotify, searches for the track on youtube, and then downloads it in the highest quality available using yt-dlp. </br> </br>
+  Convenify takes a Spotify link, looks into the URL, and then builds a custom command to launch Savify with certain parameters. Savify takes the metadata from Spotify, searches for the track on youtube, and then downloads it in the highest quality available using yt-dlp. </br>
+  To enable debug-level console output, add <code>-vv</code> in front of the track_args, album_args and playlist_args in <code>config.json:</code></br>
+  <code>"track_args": "-vv -g \"%artist%\"",</br>
+"album_args": "-vv -g \"%artist%/%album%\"",</br>
+"playlist_args": "-vv -g \"%playlist%\""</code></br> </br>
   With version 2.0, there is also a expansive audit and repair function included, which you can run on your existing collection to verify each track and re-download & tag those that are broken. This is because earlier versions used to occasionally download the wrong track, so after fixing this issue with v2.0, I needed to find those outliers among my ~16.000 track library. In my case, it found 2.550 incorrect tracks, which it replaced with their correct versions. You can launch the repair feature with my preconfigured options using the respective .bat launcher. </br>
-  The library repair function also comes with a handy Traktor Pro 3 implementation, which you can run optionally after the library repair was completed. It takes a collection.nml path, reading the run's log and removing any repaired tracks from the collection, so that they can be cleanly reimported afterwards. There's also the "NML-Mode" (Repair-Library-NML), which you can use to manually process a .nml file containing broken tracks, force-redownloading them and then also removing them from your collection.nml afterwards.
+  The library repair function also comes with a handy Traktor Pro 3 implementation, which you can run optionally after the library repair was completed. It takes a collection.nml path, reading the run's log and removing any repaired tracks from the collection, so that they can be cleanly reimported afterwards. There's also the "NML-Mode" (Repair-Library-NML.bat), which you can use to manually process a .nml file containing broken tracks, force-redownloading them and then also removing them from your collection.nml afterwards.
 </p>
 
 <h3>Installation</h3>
@@ -24,7 +28,7 @@ To use Convenify, create a Spotify developer application at https://developer.sp
 
 <h3>Usage</h3>
 <p>
-On Windows, start either script with the included .bat launchers. For update_library.bat, you also need to specify playlists to update in playlists.json.
+On Windows, start either script with the included .bat launchers. For update_library.bat, you also need to specify playlists to update in <code>playlists.json</code>.
 </p>
 
 <h4>Genre tagging with download.py</h4>
