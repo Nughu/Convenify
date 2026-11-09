@@ -12,7 +12,7 @@
   You can edit <code>config.json</code> and <code>playlists.json</code> to fit your local archive, specifying locations, Savify parameters and your own playlists to be synced by update_library.py. </br> </br>
   The first version of this used the .exe release of Savify, and the basic mechanism is still based on that principle: </br>
   Convenify takes a Spotify link, looks into the URL, and then builds a custom command to launch Savify with certain parameters. Savify takes the metadata from Spotify, searches for the track on youtube, and then downloads it in the highest quality available using yt-dlp. </br>
-  To enable debug-level console output, add <code>-vv</code> in front of the track_args, album_args and playlist_args in <code>config.json:</code></br>
+  To enable debug-level console output, add <code>-vv</code> in front of the track_args, album_args and playlist_args in <code>config.json:</code></br></br>
   <code>"track_args": "-vv -g \"%artist%\"",</br>
 "album_args": "-vv -g \"%artist%/%album%\"",</br>
 "playlist_args": "-vv -g \"%playlist%\""</code></br> </br>
@@ -22,7 +22,7 @@
 
 <h3>Installation</h3>
 <p>
-To use Convenify, create a Spotify developer application at https://developer.spotify.com and note its client ID and client secret. If either downloader is started before setup is complete, it launches <code>Savify_automation/setup.ps1</code> and prompts for those values and your music library folder path. The script installs Deno using winget if it is not already installed, saves the Spotify credentials as user environment variables, and writes the library path to <code>config.json</code>. You can also run the PowerShell script directly. No administrator access is required.
+To use Convenify, create a Spotify developer application at https://developer.spotify.com and note its client ID and client secret. If either downloader is started before setup is complete, it launches setup.ps1 and prompts for those values and your music library folder path. The script installs Deno using winget if it is not already installed, saves the Spotify credentials as user environment variables, and writes the library path to <code>config.json</code>. You can also run the PowerShell script directly. No administrator access is required.
 </br>
 </p>
 
