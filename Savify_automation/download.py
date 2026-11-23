@@ -20,13 +20,14 @@ ensure_requirements(ROOT_DIR)
 PYTHON_PATH = str(ROOT_DIR / "python" / "python.exe")
 SAVIFY_PATH = str(ROOT_DIR / "savify-new")
 
-LIBRARY_PATH = Path(json.loads(open(str(ROOT_DIR / "config.json")).read())["library_path"])
+CONFIG = json.loads((ROOT_DIR / "config.json").read_text(encoding="utf-8-sig"))
+LIBRARY_PATH = Path(CONFIG["library_path"])
 for subdir in ("Playlist", "Track", "Album"):
     (LIBRARY_PATH / subdir).mkdir(parents=True, exist_ok=True)
 
-track_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["track_args"]
-album_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["album_args"]
-playlist_args = json.loads(open(str(ROOT_DIR / "config.json")).read())["playlist_args"]
+track_args = CONFIG["track_args"]
+album_args = CONFIG["album_args"]
+playlist_args = CONFIG["playlist_args"]
 
 GENRE_PATTERN = re.compile(r'genre:"([^"]*)"')
 SPOTIFY_URL_PATTERN = re.compile(r'https?://open\.spotify\.com/\S+')

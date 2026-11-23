@@ -4,6 +4,18 @@
   <h2 style="color:#f0f6fc;">A python-based music downloader designed for quality and convenience.</h2>
 </div>
 
+<h3>Desktop app</h3>
+<p>
+  Double-click <code>Convenify.exe</code> to open the Windows GUI. It includes music
+  downloads, a queue editor, playlist management and sync, discography collection,
+  library audit/repair, Traktor cleanup and restoration, setup, and run history.
+  Options appear only for the operation they affect. Background tasks stream their
+  console output into the window and can be stopped without freezing the interface.
+  Start with <b>Settings &amp; setup</b> to select your library and check dependencies.
+  See the <a href="GUI/README.md">desktop guide</a> for workflows and build instructions.
+  The existing command-line tools and launchers remain available.
+</p>
+
 <h3>Description</h3>
 <p>
   This program is a custom upgrade of LaurenceRawlings/savify that i made for myself, originally as just a small wrapper, in order to make it as simple as possible to sync my local music with my Spotify library. </br>

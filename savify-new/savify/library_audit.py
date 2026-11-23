@@ -423,9 +423,10 @@ def main(argv=None):
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     logger = logging.getLogger('savify.audit')
     logger.setLevel(logging.DEBUG)
+    gui = bool(os.environ.get('CONVENIFY_GUI'))
     for handler in logging.getLogger().handlers:
         if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
-            handler.setLevel(logging.DEBUG if args.verbose else logging.INFO)
+            handler.setLevel(logging.DEBUG if gui or args.verbose else logging.INFO)
     try:
         if has_targets:
             _run([ffmpeg_binary(args.ffmpeg_location), '-version'], timeout=15)
@@ -455,10 +456,13 @@ def main(argv=None):
         logger.info('Spotify expected-duration lookup: %s.', 'enabled' if use_spotify else 'disabled; set SPOTIPY_CLIENT_ID/SECRET to enable')
         with audit_lock(state_dir), repair_run_log(args.run_log) as run_log:
             state = AuditState(state_dir, state_source, run_log=run_log)
-            file_log = logging.FileHandler(state_dir / 'audit.log', encoding='utf-8')
-            file_log.setLevel(logging.DEBUG)
-            file_log.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s'))
-            logger.addHandler(file_log)
+            file_log = None
+            if not gui or os.environ.get('CONVENIFY_SAVE_RUN_FILES') == '1':
+                log_dir = Path(os.environ.get('CONVENIFY_RUN_DIR', str(state_dir))) if gui else state_dir
+                file_log = logging.FileHandler(log_dir / 'audit.log', encoding='utf-8')
+                file_log.setLevel(logging.DEBUG)
+                file_log.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s'))
+                logger.addHandler(file_log)
             try:
                 if args.rescan:
                     with state.db:
@@ -509,8 +513,9 @@ def main(argv=None):
                     state.export_report()
                 finally:
                     state.close()
-                    logger.removeHandler(file_log)
-                    file_log.close()
+                    if file_log is not None:
+                        logger.removeHandler(file_log)
+                        file_log.close()
     except KeyboardInterrupt:
         if nml_paths is not None:
             logger.warning('Interrupted. Completed replacements are recorded; rerunning this NML re-downloads every listed track again.')

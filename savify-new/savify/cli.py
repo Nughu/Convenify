@@ -3,7 +3,7 @@ import sys
 import re
 import click
 import logging
-from os import system
+from os import system, environ
 from pathlib import Path
 
 from . import __version__, __author__
@@ -31,7 +31,7 @@ BANNER = rf"""
 
 """
 
-if sys.platform == 'win32':
+if sys.platform == 'win32' and not environ.get('CONVENIFY_GUI'):
     system('title Convenify')
 
 
@@ -53,6 +53,10 @@ def get_choice() -> str:
 
 
 def show_banner(clear: bool = True) -> None:
+    # The desktop already has its own branding and must not receive terminal
+    # artwork or clear-screen sequences. Normal CLI output stays unchanged.
+    if environ.get('CONVENIFY_GUI'):
+        return
     if clear:
         click.clear()
     click.echo(BANNER)

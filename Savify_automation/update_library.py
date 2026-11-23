@@ -19,11 +19,11 @@ ROOT_DIR = SCRIPT_DIR.parent
 ensure_requirements(ROOT_DIR)
 PYTHON_PATH = str(ROOT_DIR / "python" / "python.exe")
 SAVIFY_PATH = str(ROOT_DIR / "savify-new")
-LIBRARY_PATH = Path(json.loads(open(str(ROOT_DIR / "config.json")).read())["library_path"])
+LIBRARY_PATH = Path(json.loads((ROOT_DIR / "config.json").read_text(encoding="utf-8-sig"))["library_path"])
 for subdir in ("Playlist", "Track", "Album"):
     (LIBRARY_PATH / subdir).mkdir(parents=True, exist_ok=True)
 
-spotify_playlists = json.loads(open(str(ROOT_DIR / "playlists.json")).read())
+spotify_playlists = json.loads((ROOT_DIR / "playlists.json").read_text(encoding="utf-8-sig"))
 
 parser = argparse.ArgumentParser()
 parser.add_argument(

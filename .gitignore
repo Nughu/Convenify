@@ -10,3 +10,6 @@ python/Lib/site-packages/yt_dlp/extractor/shahid.py
 **logs**
 **.log**
 **.jsonl**
+gui-data/
+GUI/__pycache__/
+tests/__pycache__/
