@@ -8,5 +8,6 @@ $references = @(
     [System.Windows.Media.Brush].Assembly.Location,
     [System.Windows.Threading.Dispatcher].Assembly.Location
 )
-Add-Type -Path (Join-Path $root 'GUI\ProcessRunner.cs'), (Join-Path $root 'GUI\App.cs'), (Join-Path $root 'GUI\Themes.cs'), (Join-Path $root 'GUI\OptionHelp.cs'), (Join-Path $root 'GUI\ConsoleLogBuffer.cs'), (Join-Path $PSScriptRoot 'DesktopPersistenceTests.cs') -ReferencedAssemblies $references
+Add-Type -Path (Join-Path $root 'GUI\ProcessRunner.cs'), (Join-Path $root 'GUI\App.cs'), (Join-Path $root 'GUI\Themes.cs'), (Join-Path $root 'GUI\OptionHelp.cs'), (Join-Path $root 'GUI\ConsoleLogBuffer.cs'), (Join-Path $root 'GUI\AppDefaults.cs'), (Join-Path $root 'GUI\SettingsRegistry.cs'), (Join-Path $PSScriptRoot 'DesktopPersistenceTests.cs'), (Join-Path $PSScriptRoot 'DesktopResetTests.cs') -ReferencedAssemblies $references
 [DesktopPersistenceTests]::Run($root)
+[DesktopResetTests]::Run($root)

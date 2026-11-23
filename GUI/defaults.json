@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "files": [
+    {
+      "path": "config.json",
+      "scope": "settings",
+      "value": {
+        "library_path": "",
+        "track_args": "-g \"%artist%\"",
+        "album_args": "-g \"%artist%/%album%\"",
+        "playlist_args": "-g \"%playlist%\""
+      }
+    },
+    { "path": "Savify_automation/spotify_credentials.json", "scope": "settings", "value": null },
+    { "path": "spotify_credentials.json", "scope": "settings", "value": null },
+    { "path": "gui-data/preferences.json", "scope": "all", "value": null },
+    { "path": "playlists.json", "scope": "all", "value": {} },
+    { "path": "download-queue.txt", "scope": "all", "value": null },
+    { "path": "download-queue_2.txt", "scope": "all", "value": null }
+  ],
+  "credentials": [
+    { "key": "cfg.client_id", "label": "Spotify client ID", "environment": "SPOTIPY_CLIENT_ID" },
+    { "key": "cfg.client_secret", "label": "Spotify client secret", "environment": "SPOTIPY_CLIENT_SECRET" },
+    { "key": "cfg.acoustid", "label": "AcoustID application key (repairs / fingerprint checks)", "environment": "ACOUSTID_API_KEY" }
+  ],
+  "release_exclude_directories": ["gui-data", "releases", ".git", ".agents", ".codex", ".vscode", "__pycache__", ".pytest_cache", "_savify_audit", "logs", "temp", ".cache"],
+  "release_exclude_names": ["cookies.txt", ".cache", ".env", "spotify_credentials.json"],
+  "release_exclude_suffixes": [".bak", ".tmp", ".log", ".jsonl", ".pyc", ".pyo"]
+}

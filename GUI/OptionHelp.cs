@@ -76,10 +76,14 @@ namespace Convenify.Desktop
             { "cfg.acoustid", "AcoustID application key for fingerprint identification during library repair or full verification. Save settings stores it as a Windows user environment variable. Leave blank to keep the saved key." },
             { "ui.theme", "Choose Default (vibrant magenta and purple), Ocean, Forest or Plum. Each palette has a light and dark variant controlled by Dark mode. Changes apply immediately and are saved for the next launch." },
             { "ui.dark_mode", "Use the dark variant of the selected color theme. Turn this off for its light variant. Dark mode is enabled by default, and your choice is saved independently of the theme." },
+            { "ui.follow_output", "Automatically scroll to new process output. Turn this off to read earlier messages while a task continues." },
             { "ui.show_debug", "Show or hide DEBUG-level messages from Savify, including recent buffered messages and saved logs opened from Run history. Diagnostics are captured automatically; no separate task option is needed. This display filter does not affect log saving." },
             { "ui.save_run_files", "Keep this task's settings, full console and Savify logs, reports and retry queues in Run history. Off by default; choose before starting a task. When off, only the recent console buffer is kept for manual Save log export. Music, requested output files, library checkpoints, repair records and required recovery backups are always kept." }
         };
         private static readonly Dictionary<string, string> Actions = new Dictionary<string, string> {
+            { "Reset to defaults", "After confirmation, restore every setting and input on this operation tab, including hidden options. Other tabs and saved run files are kept. Playlist sync reloads saved definitions and discards unsaved playlist edits. Defaults are saved immediately." },
+            { "Reset settings", "After confirmation, restore the Settings tab and console preferences, reset shared CLI configuration, and remove saved user credentials and legacy credential files. Other operation tabs, playlists, queues, music and saved run files are kept." },
+            { "Reset everything", "After confirmation, reset every tab and shared CLI setting, remove user credentials, and clear saved playlists, installation-local queue files and drafts. Music, run history, reports, repair records and recovery backups are kept. Use the clean-release exporter to exclude personal files from a release." },
             { "Import file", "Load a text file into the queue editor. If the editor contains a draft, you will be asked before replacing it." },
             { "Load saved queue", "Load download-queue.txt from the Convenify folder into the editor. You will be asked before replacing an existing draft." },
             { "Save queue as...", "Save the queue editor's current contents to a text file of your choice." },

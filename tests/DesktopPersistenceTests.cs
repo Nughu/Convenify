@@ -81,6 +81,7 @@ public static class DesktopPersistenceTests
         string root = Path.Combine(tempParent, "convenify-persistence-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(root, "GUI"));
         File.Copy(Path.Combine(sourceRoot, "GUI", "MainWindow.xaml"), Path.Combine(root, "GUI", "MainWindow.xaml"));
+        File.Copy(Path.Combine(sourceRoot, "GUI", "defaults.json"), Path.Combine(root, "GUI", "defaults.json"));
         var config = new Dictionary<string, object> {
             { "library_path", "" }, { "track_args", "-vv -g \"%artist%\"" },
             { "album_args", "-g \"%album%\"" }, { "playlist_args", "-g \"%playlist%\"" },

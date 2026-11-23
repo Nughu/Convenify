@@ -13,3 +13,10 @@ python/Lib/site-packages/yt_dlp/extractor/shahid.py
 gui-data/
 GUI/__pycache__/
 tests/__pycache__/
+releases/
+*.bak
+*.tmp
+.env
+.env.*
+spotify_credentials.json
+Savify_automation/spotify_credentials.json

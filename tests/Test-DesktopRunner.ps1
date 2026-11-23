@@ -2,7 +2,7 @@
 # Offline test of the production runner, including descendant cancellation.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-Add-Type -Path (Join-Path $root 'GUI\ProcessRunner.cs')
+Add-Type -Path (Join-Path $root 'GUI\ProcessRunner.cs'), (Join-Path $root 'GUI\AppDefaults.cs') -ReferencedAssemblies 'System.dll', 'System.Core.dll', 'System.Web.Extensions.dll'
 $testFolder = Join-Path $root ('gui-data\runner-test-' + [Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($testFolder) | Out-Null
 $jobPath = Join-Path $testFolder 'job with spaces.json'

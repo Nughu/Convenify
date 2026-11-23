@@ -118,6 +118,7 @@ namespace Convenify.Desktop
             lock (gate)
             {
                 if (Running) throw new InvalidOperationException("Another task is already running.");
+                var credentialDefinitions = AppDefaults.Load(root).credentials;
                 RunnerMessage old;
                 while (messages.TryDequeue(out old)) { }
                 pending = dropped = 0;
@@ -142,8 +143,9 @@ namespace Convenify.Desktop
                 string userPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? "";
                 info.EnvironmentVariables["PATH"] = Path.Combine(root, "ffmpeg") + ";" + Environment.ExpandEnvironmentVariables(userPath) + ";" + Environment.GetEnvironmentVariable("PATH");
                 var hidden = new List<string>();
-                foreach (string name in new[] { "SPOTIPY_CLIENT_ID", "SPOTIPY_CLIENT_SECRET", "ACOUSTID_API_KEY" })
+                foreach (var definition in credentialDefinitions)
                 {
+                    string name = definition.environment;
                     string value = Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.User);
                     if (String.IsNullOrWhiteSpace(value)) value = Environment.GetEnvironmentVariable(name);
                     if (!String.IsNullOrWhiteSpace(value)) { info.EnvironmentVariables[name] = value; hidden.Add(value); }

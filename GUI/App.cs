@@ -87,6 +87,10 @@ namespace Convenify.Desktop
         private readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
         private readonly Dictionary<string, Control> fields = new Dictionary<string, Control>();
         private readonly Dictionary<string, FrameworkElement> rows = new Dictionary<string, FrameworkElement>();
+        private readonly SettingsRegistry defaultsRegistry = new SettingsRegistry();
+        private readonly AppDefaults defaults;
+        private readonly ICredentialEnvironment credentialEnvironment;
+        private const string SettingsScope = "Settings & setup";
         private readonly Dictionary<string, ResponsivePanel> pages = new Dictionary<string, ResponsivePanel>();
         private readonly ProcessRunner runner = new ProcessRunner();
         private readonly ConsoleLogBuffer logBuffer = new ConsoleLogBuffer();
@@ -169,12 +173,27 @@ namespace Convenify.Desktop
             row.Children.Add(control);
             if (hint != null) Note(row, hint);
             parent.Children.Add(row);
-            fields[key] = control;
-            rows[key] = row;
+            RegisterField(key, control, row, ScopeOf(parent));
             string explanation = OptionHelp.ForField(key);
             Help(row, explanation);
             Help(control, explanation);
             return row;
+        }
+        private string ScopeOf(DependencyObject element) {
+            while (element != null) {
+                foreach (var page in pages) if (ReferenceEquals(element, page.Value)) return page.Key;
+                element = LogicalTreeHelper.GetParent(element);
+            }
+            throw new InvalidOperationException("Attach a setting to its page before registering it.");
+        }
+        private void RegisterField(string key, Control control, FrameworkElement row, string scope) {
+            fields.Add(key, control);
+            rows.Add(key, row);
+            defaultsRegistry.Register(key, scope, control);
+        }
+        private void LibraryField(Panel parent, string key, string label) {
+            PathField(parent, key, label, Value(defaults.Config, "library_path"));
+            defaultsRegistry.InheritConfig(key, "library_path");
         }
         private void Compact(params string[] keys) {
             foreach (string key in keys) ResponsivePanel.SetFullWidth(rows[key], false);
@@ -242,9 +261,12 @@ namespace Convenify.Desktop
             }
         }
 
-        private DesktopApp(string path) {
+        private DesktopApp(string path) : this(path, new WindowsCredentialEnvironment()) { }
+        private DesktopApp(string path, ICredentialEnvironment environment) {
             root = Path.GetFullPath(path);
             dataRoot = Path.Combine(root, "gui-data");
+            defaults = AppDefaults.Load(root);
+            credentialEnvironment = environment;
             using (var stream = File.OpenRead(Path.Combine(root, "GUI", "MainWindow.xaml"))) window = (Window)XamlReader.Load(stream);
             ThemeCatalog.Apply(window, ThemeCatalog.Default, true);
             string bannerPath = Path.Combine(root, "GithubBanner.png");
@@ -293,10 +315,11 @@ namespace Convenify.Desktop
                 }
             };
             Help(cancelButton, "Stop the running worker and all of its child processes. Completed downloads and repairs are kept; temporary files may remain.");
-            Help(Named<CheckBox>("FollowLog"), "Automatically scroll to new process output. Turn this off to read earlier messages while a task continues.");
+            var followLog = Named<CheckBox>("FollowLog");
+            RegisterField("ui.follow_output", followLog, followLog, SettingsScope);
+            Help(followLog, OptionHelp.ForField("ui.follow_output"));
             var showDebug = Named<CheckBox>("ShowDebug");
-            fields["ui.show_debug"] = showDebug;
-            rows["ui.show_debug"] = showDebug;
+            RegisterField("ui.show_debug", showDebug, showDebug, SettingsScope);
             AutomationProperties.SetAutomationId(showDebug, "ui.show_debug");
             Help(showDebug, OptionHelp.ForField("ui.show_debug"));
             RoutedEventHandler filterChanged = (s, e) => {
@@ -307,8 +330,7 @@ namespace Convenify.Desktop
             showDebug.Checked += filterChanged;
             showDebug.Unchecked += filterChanged;
             var saveRuns = Named<CheckBox>("SaveRunFiles");
-            fields["ui.save_run_files"] = saveRuns;
-            rows["ui.save_run_files"] = saveRuns;
+            RegisterField("ui.save_run_files", saveRuns, saveRuns, SettingsScope);
             AutomationProperties.SetAutomationId(saveRuns, "ui.save_run_files");
             Help(saveRuns, OptionHelp.ForField("ui.save_run_files"));
             RoutedEventHandler retentionChanged = (s, e) => { if (!building) Safe(SavePreferences); };
@@ -321,15 +343,18 @@ namespace Convenify.Desktop
             var config = new Dictionary<string, object>();
             try { config = ReadObject(Path.Combine(root, "config.json")); }
             catch (Exception ex) { Append("Settings need attention: " + ex.Message + "\n"); }
-            string library = Value(config, "library_path");
-            BuildDownloads(library);
-            BuildPlaylists(library);
+            BuildDownloads();
+            BuildPlaylists();
             BuildDiscography();
-            BuildAudit(library);
+            BuildAudit();
             BuildTraktor();
             BuildHistory();
-            BuildSettings(library);
+            BuildSettings();
             BuildHelp();
+            // Defaults have now been captured from the declarations. Only now
+            // hydrate shared settings and per-operation user preferences.
+            foreach (var entry in defaultsRegistry.Entries.Where(e => e.InitialConfigKey != null))
+                Set(entry.Key, config.ContainsKey(entry.InitialConfigKey) ? Value(config, entry.InitialConfigKey) : Value(defaults.Config, entry.InitialConfigKey));
             LoadPlaylists();
             LoadPreferences();
             ThemeCatalog.Apply(window, Get("ui.theme"), On("ui.dark_mode"));
@@ -340,6 +365,8 @@ namespace Convenify.Desktop
             navigation.SelectedIndex = 0;
             runButton.Click += (s, e) => Safe(() => Start(BuildJob()));
             cancelButton.Click += (s, e) => Safe(Stop);
+            Help(Named<Button>("ResetTab"), OptionHelp.ForAction("Reset to defaults"));
+            Named<Button>("ResetTab").Click += (s, e) => Safe(() => ConfirmReset(currentPage, false));
             Named<Button>("ClearLog").Click += (s, e) => ClearConsole();
             Named<Button>("CopyLog").Click += (s, e) => Safe(() => Clipboard.SetText(console.SelectedText.Length > 0 ? console.SelectedText : console.Text));
             Named<Button>("SaveLog").Click += (s, e) => Safe(ExportLog);
@@ -361,7 +388,7 @@ namespace Convenify.Desktop
             Append("Welcome to Convenify. Choose a task from the sidebar.\nOutput from the running process will appear here. Enable Save run files before starting a task to keep its full logs and run history.\n");
         }
 
-        private void BuildDownloads(string library) {
+        private void BuildDownloads() {
             var page = pages["Download music"];
             var source = Card(page, "What would you like to download?");
             Select(source, "d.source", "Source", new[] { "Link or search", "Download queue" });
@@ -375,7 +402,7 @@ namespace Convenify.Desktop
             Button(queueButtons, "Save queue as...", SaveQueue);
             Toggle(source, "d.artist_albums", "Include all artist albums (otherwise top tracks only)");
             var output = Card(page, "Destination & audio");
-            PathField(output, "d.output", "Music folder", library);
+            LibraryField(output, "d.output", "Music folder");
             Toggle(output, "d.organize", "Create Track / Album / Playlist / Artist subfolders", true);
             DownloadOptions(page, output, "d.", true);
         }
@@ -412,7 +439,7 @@ namespace Convenify.Desktop
             PathField(connection, prefix + "temp_path", "Temporary data folder (optional)", "");
         }
 
-        private void BuildPlaylists(string library) {
+        private void BuildPlaylists() {
             var page = pages["Playlist sync"];
             var card = Card(page, "Your saved playlists", "Tick the playlists to sync. Destinations can be relative to the music folder or absolute paths.");
             playlistGrid = new DataGrid { Height = 220, ItemsSource = playlists, IsReadOnly = false, SelectionMode = DataGridSelectionMode.Single };
@@ -447,7 +474,7 @@ namespace Convenify.Desktop
             Text(editor, "p.genre", "Genre for new MP3s (optional)");
             Button(Actions(editor), "Add / update playlist", UpdatePlaylist);
             var output = Card(page, "Sync output", fullWidth: true);
-            PathField(output, "s.output", "Music folder", library);
+            LibraryField(output, "s.output", "Music folder");
             DownloadOptions(page, output, "s.", false);
         }
 
@@ -463,11 +490,11 @@ namespace Convenify.Desktop
             Note(output, "After collecting, open the file in the download queue to review the releases and start downloading.");
         }
 
-        private void BuildAudit(string library) {
+        private void BuildAudit() {
             var page = pages["Library care"];
             var source = Card(page, "Choose an operation");
             Select(source, "a.mode", "Operation", new[] { "Audit folder (report only)", "Audit and repair folder", "Replace tracks from NML export" });
-            PathField(source, "a.directory", "Music folder to scan", library);
+            LibraryField(source, "a.directory", "Music folder to scan");
             PathField(source, "a.nml", "Traktor NML export of broken tracks", "", "nml", "Every supported track listed in this export will be replaced at its original location.");
             Toggle(source, "a.full_verification", "Verify audio fingerprints as well as duration");
             Toggle(source, "a.rescan", "Recheck previously verified / repaired files");
@@ -550,7 +577,7 @@ namespace Convenify.Desktop
             });
         }
 
-        private void BuildSettings(string library) {
+        private void BuildSettings() {
             var page = pages["Settings & setup"];
             var libraryAndTools = new StackPanel();
             page.Children.Add(libraryAndTools);
@@ -569,12 +596,12 @@ namespace Convenify.Desktop
             darkMode.Checked += (s, e) => appearanceChanged();
             darkMode.Unchecked += (s, e) => appearanceChanged();
             var storage = Card(libraryAndTools, "Your music library", "The library path is shared with the existing Convenify launchers.");
-            PathField(storage, "cfg.library", "Default music folder", library);
+            LibraryField(storage, "cfg.library", "Default music folder");
             var credentials = Card(page, "Service credentials", "Saved as Windows user environment variables, as in Convenify setup. They are not written to task snapshots or GUI preferences. Leave a field blank to keep its current value.");
-            foreach (var pair in new[] { new[] { "client_id", "Spotify client ID", "SPOTIPY_CLIENT_ID" }, new[] { "client_secret", "Spotify client secret", "SPOTIPY_CLIENT_SECRET" }, new[] { "acoustid", "AcoustID application key (repairs / fingerprint checks)", "ACOUSTID_API_KEY" } }) {
+            foreach (var definition in defaults.credentials) {
                 var input = new PasswordBox();
-                string saved = Environment.GetEnvironmentVariable(pair[2], EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable(pair[2]);
-                Field(credentials, "cfg." + pair[0], pair[1], input, String.IsNullOrWhiteSpace(saved) ? "Not configured yet." : "A saved value is available. Enter a new value to replace it.");
+                string saved = credentialEnvironment.Get(definition.environment, EnvironmentVariableTarget.User) ?? credentialEnvironment.Get(definition.environment, EnvironmentVariableTarget.Process);
+                Field(credentials, definition.key, definition.label, input, String.IsNullOrWhiteSpace(saved) ? "Not configured yet." : "A saved value is available. Enter a new value to replace it.");
             }
             Button(Actions(credentials), "Save settings", SaveSettings, true);
             var tools = Card(libraryAndTools, "Tools & maintenance", "Use the environment check to inspect dependencies without making network requests.");
@@ -592,6 +619,12 @@ namespace Convenify.Desktop
             var files = Card(libraryAndTools, "Workspace files");
             Button(Actions(files), "Open Convenify folder", () => OpenPath(root));
             Note(files, "GUI preferences and queue drafts are kept in gui-data. Enable Save run files to also keep task history and logs. Playlist definitions are saved to playlists.json. Existing command-line launchers and per-type config.json arguments remain available.");
+            var reset = Card(page, "Reset configuration", fullWidth: true);
+            Note(reset, "Reset settings restores this tab, console preferences and shared CLI configuration, and removes saved credentials. Reset everything also restores every operation tab and clears saved playlists, local queues and drafts. Both keep music, run history, reports and recovery files. You will review a confirmation before any reset.");
+            var resetActions = Actions(reset);
+            Button(resetActions, "Reset settings", () => ConfirmReset(SettingsScope, false), true);
+            Button(resetActions, "Reset everything", () => ConfirmReset(null, true), true);
+            Note(reset, "For a clean release, use GUI/export_release.py instead of copying this working folder. To clear visible run history while preserving its files, close Convenify and move gui-data/runs outside this installation. The desktop guide has release instructions.");
         }
 
         private void BuildHelp() {
@@ -648,6 +681,9 @@ namespace Convenify.Desktop
         }
 
         private void RefreshRunButton() {
+            var reset = Named<Button>("ResetTab");
+            reset.Visibility = currentPage != SettingsScope && defaultsRegistry.HasScope(currentPage) ? Visibility.Visible : Visibility.Collapsed;
+            reset.IsEnabled = !busy;
             string label = null, hint = "";
             switch (currentPage) {
                 case "Download music": label = Index("d.source") == 1 ? "Download queue" : "Start download"; hint = "Existing files are skipped unless you choose to replace or verify them."; break;
@@ -890,16 +926,18 @@ namespace Convenify.Desktop
             object value;
             return data.TryGetValue(key, out value) && value != null ? Convert.ToString(value, CultureInfo.InvariantCulture) : "";
         }
-        private void WriteObject(string path, object value) {
+        private void WriteObject(string path, object value, bool keepBackup = true) {
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try {
                 File.WriteAllText(temporary, json.Serialize(value), new UTF8Encoding(false));
-                if (File.Exists(path)) File.Replace(temporary, path, path + ".bak", true);
+                if (File.Exists(path)) File.Replace(temporary, path, keepBackup ? path + ".bak" : null, true);
                 else File.Move(temporary, path);
+                if (!keepBackup) AppDefaults.RemoveOldCopies(path);
             } finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
-        private void SavePreferences() {
+        private void SavePreferences() { SavePreferencesWithBackup(true); }
+        private void SavePreferencesWithBackup(bool keepBackup) {
             var values = new Dictionary<string, object>();
             foreach (var field in fields) {
                 if (field.Value is PasswordBox || field.Key.StartsWith("cfg.") || field.Key == "t.apply") continue;
@@ -911,7 +949,7 @@ namespace Convenify.Desktop
             values["last_repair_log"] = lastRepairLog ?? "";
             values["playlist_dirty"] = playlistDirty;
             if (playlistDirty) values["playlist_draft"] = playlists.ToArray();
-            WriteObject(Path.Combine(dataRoot, "preferences.json"), values);
+            WriteObject(Path.Combine(dataRoot, "preferences.json"), values, keepBackup);
         }
         private void LoadPreferences() {
             try {
@@ -943,23 +981,79 @@ namespace Convenify.Desktop
             // Preserve every existing CLI option and unknown config key.
             Directory.CreateDirectory(folder);
             config["library_path"] = folder;
-            if (!config.ContainsKey("track_args")) config["track_args"] = "-g \"%artist%\"";
-            if (!config.ContainsKey("album_args")) config["album_args"] = "-g \"%artist%/%album%\"";
-            if (!config.ContainsKey("playlist_args")) config["playlist_args"] = "-g \"%playlist%\"";
+            foreach (var entry in defaults.Config) if (!config.ContainsKey(entry.Key)) config[entry.Key] = entry.Value;
             WriteObject(Path.Combine(root, "config.json"), config);
-            foreach (var pair in new[] { new[] { "cfg.client_id", "SPOTIPY_CLIENT_ID" }, new[] { "cfg.client_secret", "SPOTIPY_CLIENT_SECRET" }, new[] { "cfg.acoustid", "ACOUSTID_API_KEY" } }) {
-                string value = Get(pair[0]);
+            foreach (var definition in defaults.credentials) {
+                string value = Get(definition.key);
                 if (String.IsNullOrWhiteSpace(value)) continue;
-                Environment.SetEnvironmentVariable(pair[1], value, EnvironmentVariableTarget.User);
-                Environment.SetEnvironmentVariable(pair[1], value);
-                ((PasswordBox)fields[pair[0]]).Clear();
-                var hint = ((StackPanel)rows[pair[0]]).Children.OfType<TextBlock>().LastOrDefault();
+                credentialEnvironment.Set(definition.environment, value, EnvironmentVariableTarget.User);
+                credentialEnvironment.Set(definition.environment, value, EnvironmentVariableTarget.Process);
+                ((PasswordBox)fields[definition.key]).Clear();
+                var hint = ((StackPanel)rows[definition.key]).Children.OfType<TextBlock>().LastOrDefault();
                 if (hint != null) hint.Text = "A saved value is available. Enter a new value to replace it.";
             }
-            foreach (string key in new[] { "d.output", "s.output", "a.directory", "cfg.library" }) Set(key, folder);
+            foreach (var entry in defaultsRegistry.Entries.Where(e => e.InitialConfigKey == "library_path")) Set(entry.Key, folder);
             SavePreferences();
             Named<TextBlock>("Status").Text = "Settings saved";
             Append("Library settings and supplied credentials saved. New tasks will use them immediately.\n");
+        }
+
+        private void ConfirmReset(string scope, bool everything) {
+            if (busy) throw new InvalidOperationException("Wait for the running task to finish before resetting configuration.");
+            string title = everything ? "Reset everything" : scope == SettingsScope ? "Reset settings" : "Reset " + scope;
+            string message = everything
+                ? "Restore defaults for every operation, appearance and console option, shared CLI settings and saved credentials? This clears saved playlist definitions, installation-local queue files, all drafts and remembered paths."
+                : scope == SettingsScope
+                    ? "Restore appearance and console defaults, clear the shared library path, restore default CLI options and remove saved Spotify/AcoustID credentials? Operation-tab values and saved playlists are kept."
+                    : "Restore every option on " + scope + " to its original default, including hidden options and entered text?" + (scope == "Playlist sync" ? " Unsaved playlist edits will be discarded and saved definitions reloaded." : "");
+            if (everything || scope == SettingsScope) message += "\n\nCredentials are removed from this process, your Windows user environment and the installation's legacy credential files. This also affects the command-line tools. Machine-level environment settings are kept.";
+            message += "\n\nMusic, run history, reports, repair records and recovery backups are kept. Reset applies immediately and is saved.";
+            if (MessageBox.Show(window, message, title, MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel) == MessageBoxResult.OK)
+                ResetConfiguration(scope, everything);
+        }
+
+        private void ResetConfiguration(string scope, bool everything) {
+            if (busy) throw new InvalidOperationException("Wait for the running task to finish before resetting configuration.");
+            if (!everything && !defaultsRegistry.HasScope(scope)) throw new ArgumentException("This page has no settings to reset.");
+            bool shared = everything || scope == SettingsScope;
+            // Validate all targets before the first mutation. No recursive deletes.
+            var files = shared ? defaults.files.Where(f => everything || f.scope == "settings").ToArray() : new DefaultFile[0];
+            foreach (var file in files) AppDefaults.LocalPath(root, file.path);
+            AppDefaults.LocalPath(root, "gui-data/preferences.json");
+            building = true;
+            try {
+                foreach (var file in files) {
+                    string path = AppDefaults.LocalPath(root, file.path);
+                    if (file.value == null) { File.Delete(path); AppDefaults.RemoveOldCopies(path); }
+                    else WriteObject(path, file.value, false);
+                }
+                if (shared) foreach (var definition in defaults.credentials) {
+                    credentialEnvironment.Set(definition.environment, null, EnvironmentVariableTarget.User);
+                    credentialEnvironment.Set(definition.environment, null, EnvironmentVariableTarget.Process);
+                    var hint = ((StackPanel)rows[definition.key]).Children.OfType<TextBlock>().LastOrDefault();
+                    if (hint != null) hint.Text = "Not configured yet.";
+                }
+                if (everything || scope == "Playlist sync") {
+                    playlistGrid.CancelEdit();
+                    playlistGrid.SelectedItem = null;
+                    playlists.Clear(); playlistExtras.Clear(); playlistDirty = false; playlistsReadable = true;
+                    if (!everything) LoadPlaylists();
+                }
+                defaultsRegistry.Reset(everything ? null : scope);
+                if (everything) {
+                    lastRepairLog = runFolder = viewedLog = artifact = activeAction = null;
+                    activeMetadata = null; saveRunFiles = false;
+                    ClearConsole(); UpdateRunFilesButton();
+                    Named<ProgressBar>("Progress").Value = 0;
+                    Named<TextBlock>("Elapsed").Text = "";
+                }
+                SavePreferencesWithBackup(false);
+            } finally {
+                building = false;
+                ThemeCatalog.Apply(window, Get("ui.theme"), On("ui.dark_mode"));
+                RebuildConsole(); RefreshVisibility(); RefreshRunButton();
+            }
+            Named<TextBlock>("Status").Text = everything ? "All configuration reset; run files kept" : "Defaults restored: " + scope;
         }
 
         private void LoadPlaylists() {

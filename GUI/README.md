@@ -186,11 +186,94 @@ setup. The runner redacts their literal values from its display and console log.
 Task files can contain your local paths, queries and a proxy URL, so review them
 before sharing. `gui-data` is ignored by Git.
 
+The executable does not embed your saved configuration. Credentials set by the
+GUI live in the Windows user environment (`SPOTIPY_CLIENT_ID`,
+`SPOTIPY_CLIENT_SECRET`, `ACOUSTID_API_KEY`), outside the installation. The legacy
+discography script can also read `Savify_automation/spotify_credentials.json`.
+Savify's working data/cache normally lives under `%APPDATA%/Savify`, unless a
+temporary data folder was selected. These are separate from GUI preferences.
+
 All existing `.bat` launchers and CLI commands remain available. Legacy changes
 cover UTF-8 config/playlist reading (so GUI-saved Unicode names work) and GUI-only
 logging, console-title and ASCII banner behavior. CLI verbosity, silent mode and
 automatic diagnostic log files are preserved. No console prompt loops were
 removed or repurposed.
+
+## Resetting configuration
+
+Each operation page has **Reset to defaults** beside its title. It resets all
+inputs on that page, including options currently hidden by another selection,
+and saves immediately. It does not reset other tabs. Playlist sync reloads saved
+playlist definitions and discards unsaved edits; it does not delete the saved
+definitions. Download resets clear the queue editor but keep queue files.
+
+Settings has two separate actions:
+
+| Action | Reset scope |
+| --- | --- |
+| **Reset settings** | Settings page, appearance, console preferences, shared `config.json`, user/process credentials, and installation-local legacy credential files. Operation tabs, saved playlists and queue files are kept. |
+| **Reset everything** | Everything above plus all operation tabs, remembered paths, queue/playlist drafts, saved `playlists.json` definitions and the installation's `download-queue.txt` / `download-queue_2.txt`. |
+
+Both actions require confirmation and are unavailable while a task runs.
+**Neither deletes music, saved run files/history, reports, repair records or
+recovery backups.** Files selected outside the installation are not deleted.
+Credential resets affect the CLI as well; machine-level environment settings are
+not changed. Reset configuration is written without retaining the previous
+personal values in `.bak` files.
+
+To clear the app's visible **Run history** while keeping its files, close
+Convenify and move the entire `gui-data/runs` folder to a backup location outside
+the installation. Reopen the app: the history will be empty, and the next saved
+run creates a new folder. Keep the moved folder for its repair records and
+Traktor manifests/backups. Reset buttons deliberately leave it alone.
+
+## Preparing a release
+
+You do not need to reset your development installation to ship clean defaults.
+Do not ZIP the working folder: ignored files are still present on disk, and a
+plain Git archive can include a customized, tracked `config.json`.
+
+Build and commit the version you intend to distribute, including the rebuilt
+`Convenify.exe`, the GUI sources and `GUI/defaults.json`. Then, from the Convenify
+folder, run:
+
+```powershell
+.\python\python.exe GUI\export_release.py --check
+.\python\python.exe GUI\export_release.py --output releases\Convenify.zip
+```
+
+The exporter reads **committed Git objects only**, using `HEAD` by default (or
+`--revision <tag-or-commit>`). It excludes the entire `gui-data` tree even if
+accidentally committed, local queues, credential/cookie files, logs, caches,
+temporary files and backups. It replaces declared configuration files with the
+bundled defaults, including a blank library path and empty playlist definitions.
+It never reads credentials from the Windows environment into the package, copies
+uncommitted/untracked files, resets local settings, or removes local run files.
+The ZIP's membership and CRCs are verified before success is reported; an
+existing output ZIP is never overwritten. `releases/` is ignored by Git.
+
+Use the exported ZIP for the release. Running it on your own Windows account can
+still discover that account's saved environment credentials; that does not mean
+the ZIP contains them. A different user account starts without those credentials.
+
+## Adding settings and defaults
+
+All UI fields go through `Field` / `RegisterField`, which capture their initial
+value and owning page **before** user values are loaded. Reset enumerates this
+registry, rather than maintaining a separate list of control names. New hidden
+fields and operation pages therefore gain reset coverage automatically. A new
+control type must implement default handling in `SettingsRegistry`; unsupported
+types fail registration instead of being silently skipped. Use `LibraryField`
+for controls initialized from the shared library path.
+
+Keep new GUI preferences in `gui-data/preferences.json` via the existing field
+registration. Register new non-control configuration files and their pristine
+contents in `GUI/defaults.json`, choosing `settings` or `all` reset scope. The
+same manifest drives configuration reset and clean-release sanitization. New
+credentials also belong in its `credentials` list, which is used by display,
+save, reset and runner redaction. Defaults must be application constants, never
+values loaded from user configuration. Task outputs and recovery data are not
+configuration and must not be registered as resettable files.
 
 ## Development and offline verification
 
@@ -210,6 +293,7 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File GUI\Launch.ps1 -Smo
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests\Test-DesktopRunner.ps1
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File tests\Test-DesktopPersistence.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests\Test-DesktopLog.ps1
+python\python.exe tests\test_release_export.py
 ```
 
 Tests cover task/option routing, genre parsing, Click/yt-dlp argument boundaries,
@@ -222,3 +306,8 @@ config/playlist compatibility, backups, draft recovery, theme migration and
 credential exclusion. Log checks cover filtering, partial lines, retained DEBUG
 messages, clearing and bounded memory under heavy output. Banner checks verify
 that GUI suppression preserves normal CLI output.
+Reset checks use fake credential storage and an isolated installation: they cover
+every page, hidden/new fields, future manifest entries, restart persistence,
+stale-backup removal and preservation of run files. Release tests use disposable
+Git repositories containing deliberately personal-looking configuration to
+verify sanitization without changing the actual workspace or its branch.

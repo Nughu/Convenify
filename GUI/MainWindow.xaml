@@ -181,7 +181,10 @@
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
       <StackPanel Margin="30,25,30,16">
-        <TextBlock x:Name="PageTitle" FontSize="28" FontWeight="SemiBold"/>
+        <DockPanel>
+          <Button x:Name="ResetTab" Content="Reset to defaults" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0" Visibility="Collapsed"/>
+          <TextBlock x:Name="PageTitle" FontSize="28" FontWeight="SemiBold"/>
+        </DockPanel>
         <TextBlock x:Name="PageDescription" Foreground="{DynamicResource MutedBrush}" Margin="0,7,0,0" TextWrapping="Wrap"/>
       </StackPanel>
       <!-- Resize this whole pane against the log. Its fixed bottom row keeps

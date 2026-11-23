@@ -13,6 +13,8 @@
   console output into the window and can be stopped without freezing the interface.
   Start with <b>Settings &amp; setup</b> to select your library and check dependencies.
   See the <a href="GUI/README.md">desktop guide</a> for workflows and build instructions.
+  The guide also explains per-tab resets and exporting a clean release without
+  personal settings or run history.
   The existing command-line tools and launchers remain available.
 </p>
 

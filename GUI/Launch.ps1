@@ -10,7 +10,7 @@ try {
         [System.Windows.Media.Brush].Assembly.Location,
         [System.Windows.Threading.Dispatcher].Assembly.Location
     )
-    Add-Type -Path (Join-Path $PSScriptRoot 'ProcessRunner.cs'), (Join-Path $PSScriptRoot 'App.cs'), (Join-Path $PSScriptRoot 'Themes.cs'), (Join-Path $PSScriptRoot 'OptionHelp.cs'), (Join-Path $PSScriptRoot 'ConsoleLogBuffer.cs') -ReferencedAssemblies $references
+    Add-Type -Path (Join-Path $PSScriptRoot 'ProcessRunner.cs'), (Join-Path $PSScriptRoot 'App.cs'), (Join-Path $PSScriptRoot 'Themes.cs'), (Join-Path $PSScriptRoot 'OptionHelp.cs'), (Join-Path $PSScriptRoot 'ConsoleLogBuffer.cs'), (Join-Path $PSScriptRoot 'AppDefaults.cs'), (Join-Path $PSScriptRoot 'SettingsRegistry.cs') -ReferencedAssemblies $references
     if ($Check) { Write-Output 'Desktop sources compiled successfully.'; exit 0 }
     if ($SmokeTest) { [Convenify.Desktop.DesktopApp]::SmokeTest((Split-Path -Parent $PSScriptRoot)); exit 0 }
     [Convenify.Desktop.DesktopApp]::Run((Split-Path -Parent $PSScriptRoot))

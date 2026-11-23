@@ -10,6 +10,7 @@ foreach ($reference in $references) { $arguments += '/reference:' + (Join-Path $
 foreach ($reference in @('PresentationFramework.dll', 'PresentationCore.dll', 'WindowsBase.dll')) { $arguments += '/reference:' + (Join-Path $framework ('WPF\' + $reference)) }
 $arguments += @((Join-Path $PSScriptRoot 'Program.cs'), (Join-Path $PSScriptRoot 'App.cs'), (Join-Path $PSScriptRoot 'ProcessRunner.cs'), (Join-Path $PSScriptRoot 'Themes.cs'), (Join-Path $PSScriptRoot 'OptionHelp.cs'))
 $arguments += (Join-Path $PSScriptRoot 'ConsoleLogBuffer.cs')
+$arguments += (Join-Path $PSScriptRoot 'AppDefaults.cs'), (Join-Path $PSScriptRoot 'SettingsRegistry.cs')
 & (Join-Path $framework 'csc.exe') @arguments
 if ($LASTEXITCODE -ne 0) { throw 'Convenify desktop build failed.' }
 Write-Output ('Built ' + (Join-Path $root 'Convenify.exe'))
